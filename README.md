@@ -6,16 +6,16 @@ ontologies_api provides a RESTful interface for accessing [BioPortal](https://bi
 
 - [Ruby 2.x](http://www.ruby-lang.org/en/downloads/) (most recent patch level)
 - [rbenv](https://github.com/sstephenson/rbenv) and [ruby-build](https://github.com/sstephenson/ruby-build) (optional)
-    - If you need to switch Ruby versions for other projects, you may want to install something like rbenv to manage your Ruby environment.
+  - If you need to switch Ruby versions for other projects, you may want to install something like rbenv to manage your Ruby environment.
 - [Git](http://git-scm.com/)
 - [Bundler](https://bundler.io/)
 - [4store](https://github.com/ncbo/4store)
-    - BioPortal relies on 4store as the main datastore
-    - For starting, stopping, and restarting 4store easily, you can try setting up [4s-service](https://gist.github.com/4211360)
+  - BioPortal relies on 4store as the main datastore
+  - For starting, stopping, and restarting 4store easily, you can try setting up [4s-service](https://gist.github.com/4211360)
 - [Redis](http://redis.io)
-    - Used for caching (HTTP, query caching, Annotator cache)
+  - Used for caching (HTTP, query caching, Annotator cache)
 - [Solr](http://lucene.apache.org/solr/)
-    - BioPortal indexes ontology class and property content using Solr (a Lucene-based server)
+  - BioPortal indexes ontology class and property content using Solr (a Lucene-based server)
 
 ## Configuring Solr
 
@@ -36,7 +36,7 @@ To configure Solr for ontologies_api usage, modify the example project included 
     # Find the following lines:
     # <core name="NCBO1" config="solrconfig.xml" instanceDir="core1" schema="schema.xml" dataDir="data"/>
     # <core name="NCBO2" config="solrconfig.xml" instanceDir="core2" schema="schema.xml" dataDir="data"/>
-    # Replace the value of `dataDir` in each line with: 
+    # Replace the value of `dataDir` in each line with:
     # /<your own path to data dir>/core1
     # /<your own path to data dir>/core2
     # Start solr
@@ -82,13 +82,27 @@ $ cp config/environments/config.rb.sample config/environments/test.rb
 Execute the suite of tests from the command line:
 
 ```
-$ bundle exec rake test 
+$ bundle exec rake test
 ```
 
 ### Run the application
 
+First, set up the required services (4store, Redis, Solr) manually as described above, or using the following docker command:
+
 ```
-$ bundle exec rackup --port 9393 
+sudo docker compose --profile 4store up -d solr-ut redis-ut 4store-ut mgrep-ut
+```
+
+Then, start the application using Rack:
+
+```
+$ bundle exec rackup --port 9393
+```
+
+Or using shotgun:
+
+```
+$ bundle exec shotgun --env=development
 ```
 
 Once started, the application will be available at localhost:9393.
