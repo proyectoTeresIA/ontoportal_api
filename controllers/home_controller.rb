@@ -18,7 +18,17 @@ class HomeController < ApplicationController
       routes.each do |route|
         next if route.length < 3 || route.split("/").length > 2
         route_no_slash = route.gsub("/", "")
-        context[route_no_slash] = route_to_class_map[route].type_uri.to_s if route_to_class_map[route] && route_to_class_map[route].respond_to?(:type_uri)
+        if route_to_class_map[route] && route_to_class_map[route].respond_to?(:type_uri)
+          id_url_prefix = if LinkedData.settings.id_url_prefix.nil? || LinkedData.settings.id_url_prefix.empty?
+                            'http://data.bioontology.org/'
+                          else
+                            LinkedData.settings.id_url_prefix
+                          end
+          
+          original_type_uri = route_to_class_map[route].type_uri.to_s
+          class_name = original_type_uri.split('/').last
+          context[route_no_slash] = "#{id_url_prefix}metadata/#{class_name}"
+        end
         routes_hash[route_no_slash] = LinkedData.settings.rest_url_prefix+route_no_slash
       end
       routes_hash["@context"] = context

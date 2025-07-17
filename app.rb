@@ -65,6 +65,8 @@ if ENV['OVERRIDE_CONFIG'] == 'true'
     config.goo_redis_port    = ENV['REDIS_PORT']
     config.http_redis_host   = ENV['REDIS_HOST']
     config.http_redis_port   = ENV['REDIS_PORT']
+    config.rest_url_prefix   = ENV['REST_URL_PREFIX'] if ENV['REST_URL_PREFIX']
+    config.id_url_prefix     = ENV['REST_URL_PREFIX'] if ENV['REST_URL_PREFIX']
   end
 
   Annotator.config do |config|
