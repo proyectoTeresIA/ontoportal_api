@@ -53,6 +53,10 @@ use Rack::Static,
 environment = settings.environment.nil? ? :development : settings.environment
 require_relative "config/config"
 
+# Load environment-specific configuration first
+require_relative "config/environments/#{environment}.rb"
+
+# Override with Docker environment variables if specified
 if ENV['OVERRIDE_CONFIG'] == 'true'
   LinkedData.config do |config|
     config.goo_backend_name  = ENV['GOO_BACKEND_NAME']
@@ -65,6 +69,7 @@ if ENV['OVERRIDE_CONFIG'] == 'true'
     config.goo_redis_port    = ENV['REDIS_PORT']
     config.http_redis_host   = ENV['REDIS_HOST']
     config.http_redis_port   = ENV['REDIS_PORT']
+    # Override URL prefixes for Docker environment (must come after environment config)
     config.rest_url_prefix   = ENV['REST_URL_PREFIX'] if ENV['REST_URL_PREFIX']
     config.id_url_prefix     = ENV['REST_URL_PREFIX'] if ENV['REST_URL_PREFIX']
   end
@@ -76,8 +81,6 @@ if ENV['OVERRIDE_CONFIG'] == 'true'
     config.mgrep_port           = ENV['MGREP_PORT']
   end
 end
-
-require_relative "config/environments/#{environment}.rb"
 
 # Development-specific options
 if [:development, :console].include?(settings.environment)

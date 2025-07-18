@@ -1,0 +1,290 @@
+services:
+  # Production API Service
+  api-production:
+    build:
+      context: .
+      args:
+        RUBY_VERSION: "3.1"
+    environment:
+      # Core production settings
+      RACK_ENV: production
+      OVERRIDE_CONFIG: "true"
+
+      # API Configuration
+      REST_URL_PREFIX: "http://localhost:9394/"
+
+      # Database Configuration
+      GOO_BACKEND_NAME: 4store
+      GOO_PORT: 9000
+      GOO_HOST: 4store-production
+      GOO_PATH_QUERY: /sparql/
+      GOO_PATH_DATA: /data/
+      GOO_PATH_UPDATE: /update/
+
+      # Production Redis Configuration
+      GOO_REDIS_HOST: redis-production
+      REDIS_GOO_CACHE_HOST: redis-production
+      REDIS_HTTP_CACHE_HOST: redis-production
+      REDIS_PERSISTENT_HOST: redis-production
+      REDIS_HOST: redis-production
+      REDIS_PORT: 6379
+      ANNOTATOR_REDIS_HOST: redis-production
+      ANNOTATOR_REDIS_PORT: 6379
+
+      # Search Services (production-specific)
+      SOLR_TERM_SEARCH_URL: http://solr-production:8983/solr/term_search_core1
+      SOLR_PROP_SEARCH_URL: http://solr-production:8983/solr/prop_search_core1
+      MGREP_HOST: mgrep-production
+      MGREP_PORT: 55556
+
+      # Bundle Configuration
+      BUNDLE_PATH: /srv/ontoportal/bundle
+      BUNDLE_APP_CONFIG: /srv/ontoportal/ontologies_api/.bundle
+
+      # Production Optimizations
+      COVERAGE: "false"
+
+      # Data Persistence Paths
+      REPOSITORY_FOLDER: "/srv/ontoportal/data/repository"
+      MGREP_DICTIONARY_FILE: "/srv/ontoportal/data/mgrep/dictionary/dictionary.txt"
+      REPORT_PATH: "/srv/ontoportal/data/ontologies_report.json"
+
+      # Production-Specific Settings
+      ENABLE_HTTP_CACHE: "true"
+      ENABLE_SECURITY: "true"
+      ENABLE_MONITORING: "false"
+      ENABLE_THROTTLING: "true"
+
+      # Logging Configuration
+      LOG_LEVEL: "INFO"
+      SLOW_REQUEST_LOG: "/srv/ontoportal/logs/slow_requests.log"
+
+    command: "bundle exec rackup -o 0.0.0.0 --port 9394 -E production"
+    ports:
+      - "9394:9394"
+
+    volumes:
+      # Production Data Persistence
+      - production_data:/srv/ontoportal/data
+      - production_logs:/srv/ontoportal/logs
+      # Log directory (writable for application logs)
+      - production_app_logs:/srv/ontoportal/ontologies_api/log
+      # Bundle Volume (shared with development)
+      - bundle:/srv/ontoportal/bundle
+      # Code (read-only in production for security)
+      - .:/srv/ontoportal/ontologies_api:ro
+
+    depends_on:
+      # Production-specific services only
+      4store-production:
+        condition: service_started
+      redis-production:
+        condition: service_healthy
+      solr-production:
+        condition: service_healthy
+      mgrep-production:
+        condition: service_healthy
+
+    restart: unless-stopped
+
+    # Resource limits for production
+    # deploy:
+    #   resources:
+    #     limits:
+    #       memory: 2G
+    #       cpus: "1.0"
+    #     reservations:
+    #       memory: 1G
+    #       cpus: "0.5"
+
+    # Health check for the API
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9394/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # Production-Dedicated 4store Database
+  4store-production:
+    image: bde2020/4store
+    platform: linux/amd64
+
+    ports:
+      - "8082:9000" # Different port from development (8081)
+
+    volumes:
+      - production_4store:/var/lib/4store
+
+    command: >
+      bash -c "4s-backend-setup --segments 4 ontoportal_production_kb
+      && 4s-backend ontoportal_production_kb
+      && 4s-httpd -D -s-1 -p 9000 ontoportal_production_kb"
+
+    restart: unless-stopped
+
+    # Resource limits
+    # deploy:
+    #   resources:
+    #     limits:
+    #       memory: 4G
+    #       cpus: "2.0"
+    #     reservations:
+    #       memory: 2G
+    #       cpus: "1.0"
+
+    # Health check for 4store (using netcat instead of curl)
+    # Temporarily disabled to avoid startup issues
+    # healthcheck:
+    #   test: ["CMD-SHELL", "nc -z localhost 9000 || exit 1"]
+    #   interval: 30s
+    #   timeout: 10s
+    #   retries: 3
+    #   start_period: 60s
+
+    # Environment variables for tuning
+    environment:
+      - FOURSTORE_SEGMENTS=4
+      - FOURSTORE_KB_NAME=ontoportal_production_kb
+
+  # Production-Dedicated Redis Cache
+  redis-production:
+    image: redis:7-alpine
+
+    ports:
+      - "6380:6379" # Different port from development (6379)
+
+    volumes:
+      - production_redis:/data
+      - ./config/redis/redis-production.conf:/etc/redis/redis.conf:ro
+
+    # Production-optimized Redis configuration
+    command: >
+      redis-server /etc/redis/redis.conf
+      --appendonly yes
+      --maxmemory 1gb
+      --maxmemory-policy allkeys-lru
+      --save 900 1
+      --save 300 10
+      --save 60 10000
+
+    restart: unless-stopped
+
+    # Resource limits
+    # deploy:
+    #   resources:
+    #     limits:
+    #       memory: 1.5G
+    #       cpus: "0.5"
+    #     reservations:
+    #       memory: 512M
+    #       cpus: "0.25"
+
+    # Health check for Redis
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
+
+  # Production Solr Search Service
+  solr-production:
+    image: solr:8
+    volumes:
+      - ./test/solr/configsets:/configsets:ro
+      - production_solr:/var/solr
+    ports:
+      - "8984:8983" # Different port from development (8983)
+    command: >
+      bash -c "precreate-core term_search_core1 /configsets/term_search
+      && precreate-core prop_search_core1 /configsets/property_search
+      && solr-foreground"
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          'curl -sf http://localhost:8983/solr/term_search_core1/admin/ping?wt=json | grep -iq ''"status":"OK"}'' || exit 1',
+        ]
+      start_period: 30s
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  # Production mgrep Service
+  mgrep-production:
+    image: ontoportal/mgrep:0.0.2
+    platform: linux/amd64
+    volumes:
+      - production_data:/srv/ontoportal/data:ro
+    healthcheck:
+      test: ["CMD", "nc", "-z", "-v", "127.0.0.1", "55556"]
+      start_period: 10s
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+# Production-Specific Volumes
+volumes:
+  # Production data persistence
+  production_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./production_data
+
+  # Production logs
+  production_logs:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./production_logs
+
+  # Production 4store database
+  production_4store:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./production_4store
+
+  # Production Redis data
+  production_redis:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./production_redis
+
+  # Production Solr data
+  production_solr:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./production_solr
+
+  # Production application logs
+  production_app_logs:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./production_logs
+
+  bundle:
+    name: ontoportal_api_bundle
+    driver: local
+
+# Production Network Configuration
+networks:
+  default:
+    name: ontoportal_production
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

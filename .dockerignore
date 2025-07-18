@@ -3,6 +3,10 @@
 .gitignore
 .github
 create_permissions.log
+
+# Production directories
+production_*
+
 # Logs
 log/*
 # Temp files
