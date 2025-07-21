@@ -5,63 +5,15 @@ services:
       context: .
       args:
         RUBY_VERSION: "3.1"
+    env_file:
+      - .env.production
     environment:
-      # Core production settings
-      RACK_ENV: production
-      OVERRIDE_CONFIG: "true"
-
-      # API Configuration
-      REST_URL_PREFIX: "http://localhost:9394/"
-
-      # Database Configuration
-      GOO_BACKEND_NAME: 4store
-      GOO_PORT: 9000
-      GOO_HOST: 4store-production
-      GOO_PATH_QUERY: /sparql/
-      GOO_PATH_DATA: /data/
-      GOO_PATH_UPDATE: /update/
-
-      # Production Redis Configuration
-      GOO_REDIS_HOST: redis-production
-      REDIS_GOO_CACHE_HOST: redis-production
-      REDIS_HTTP_CACHE_HOST: redis-production
-      REDIS_PERSISTENT_HOST: redis-production
-      REDIS_HOST: redis-production
-      REDIS_PORT: 6379
-      ANNOTATOR_REDIS_HOST: redis-production
-      ANNOTATOR_REDIS_PORT: 6379
-
-      # Search Services (production-specific)
-      SOLR_TERM_SEARCH_URL: http://solr-production:8983/solr/term_search_core1
-      SOLR_PROP_SEARCH_URL: http://solr-production:8983/solr/prop_search_core1
-      MGREP_HOST: mgrep-production
-      MGREP_PORT: 55556
-
-      # Bundle Configuration
       BUNDLE_PATH: /srv/ontoportal/bundle
       BUNDLE_APP_CONFIG: /srv/ontoportal/ontologies_api/.bundle
 
-      # Production Optimizations
-      COVERAGE: "false"
-
-      # Data Persistence Paths
-      REPOSITORY_FOLDER: "/srv/ontoportal/data/repository"
-      MGREP_DICTIONARY_FILE: "/srv/ontoportal/data/mgrep/dictionary/dictionary.txt"
-      REPORT_PATH: "/srv/ontoportal/data/ontologies_report.json"
-
-      # Production-Specific Settings
-      ENABLE_HTTP_CACHE: "true"
-      ENABLE_SECURITY: "true"
-      ENABLE_MONITORING: "false"
-      ENABLE_THROTTLING: "true"
-
-      # Logging Configuration
-      LOG_LEVEL: "INFO"
-      SLOW_REQUEST_LOG: "/srv/ontoportal/logs/slow_requests.log"
-
-    command: "bundle exec rackup -o 0.0.0.0 --port 9394 -E production"
+    command: "bundle exec rackup -o 0.0.0.0 --port 9393 -E production"
     ports:
-      - "9394:9394"
+      - "9393:9393"
 
     volumes:
       # Production Data Persistence

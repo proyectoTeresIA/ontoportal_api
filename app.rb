@@ -69,6 +69,8 @@ if ENV['OVERRIDE_CONFIG'] == 'true'
     config.goo_redis_port    = ENV['REDIS_PORT']
     config.http_redis_host   = ENV['REDIS_HOST']
     config.http_redis_port   = ENV['REDIS_PORT']
+    config.ontology_analytics_redis_host = ENV['REDIS_PERSISTENT_HOST'] || ENV['REDIS_HOST']
+    config.ontology_analytics_redis_port = ENV['REDIS_PORT']
     # Override URL prefixes for Docker environment (must come after environment config)
     config.rest_url_prefix   = ENV['REST_URL_PREFIX'] if ENV['REST_URL_PREFIX']
     config.id_url_prefix     = ENV['REST_URL_PREFIX'] if ENV['REST_URL_PREFIX']
@@ -79,6 +81,16 @@ if ENV['OVERRIDE_CONFIG'] == 'true'
     config.annotator_redis_port = ENV['ANNOTATOR_REDIS_PORT']
     config.mgrep_host           = ENV['MGREP_HOST']
     config.mgrep_port           = ENV['MGREP_PORT']
+  end
+
+  # Override NcboCron configuration for Docker environment
+  begin
+    NcboCron.config do |config|
+      config.redis_host = ENV['REDIS_PERSISTENT_HOST'] || ENV['REDIS_HOST']
+      config.redis_port = ENV['REDIS_PORT']
+    end
+  rescue NameError
+    # NcboCron not available, skip configuration
   end
 end
 
