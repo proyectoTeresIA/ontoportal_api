@@ -3,6 +3,8 @@ x-app: &app
     context: .
     args:
       RUBY_VERSION: "3.1"
+  env_file:
+    - .env
   # Increase the version number in the image tag every time Dockerfile or its arguments is changed
   environment: &env
     BUNDLE_PATH: /srv/ontoportal/bundle
