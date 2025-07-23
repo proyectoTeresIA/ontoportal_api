@@ -29,11 +29,6 @@ bin/**
 # Mac artifacts
 **.DS_Store
 
-# Support local configs
-config/environments/*
-!config/environments/config.rb
-!config/environments/config.rb.sample
-
 #ignore capistrano deployment
 config/deploy/*
 config/*.p12
@@ -70,4 +65,8 @@ create_permissions.log
 ontologies_api.iml
 
 production_*
-.env*
+
+# Environment variables (secrets)
+.env
+.env.*
+!.env.sample

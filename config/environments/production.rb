@@ -1,31 +1,19 @@
-# conig file for unit tests
-
-# GOO_BACKEND_NAME = ENV.include?("GOO_BACKEND_NAME") ? ENV["GOO_BACKEND_NAME"] : "AG"
-# GOO_HOST         = ENV.include?("GOO_HOST")         ? ENV["GOO_HOST"]         : "localhost"
-# GOO_PATH_QUERY   = ENV.include?("GOO_PATH_QUERY")   ? ENV["GOO_PATH_QUERY"]   : "/repositories/bioportal"
-# GOO_PATH_DATA    = ENV.include?("GOO_PATH_DATA")    ? ENV["GOO_PATH_DATA"]    : "/repositories/bioportal/statements"
-# GOO_PATH_UPDATE  = ENV.include?("GOO_PATH_UPDATE")  ? ENV["GOO_PATH_UPDATE"]  : "/repositories/bioportal/statements"
-# GOO_PORT         = ENV.include?("GOO_PORT")         ? ENV["GOO_PORT"]         : 10035
-
 GOO_BACKEND_NAME = ENV.fetch('GOO_BACKEND_NAME', '4store')
 GOO_HOST         = ENV.fetch('GOO_HOST', 'localhost')
 GOO_PATH_DATA    = ENV.fetch('GOO_PATH_DATA', '/data/')
 GOO_PATH_QUERY   = ENV.fetch('GOO_PATH_QUERY', '/sparql/')
 GOO_PATH_UPDATE  = ENV.fetch('GOO_PATH_UPDATE', '/update/')
-GOO_PORT         = ENV.fetch('GOO_PORT', '8080').to_i
-
-MGREP_DICTIONARY_FILE = ENV.fetch('MGREP_DICTIONARY_FILE', './test/data/dictionary.txt')
+GOO_PORT         = ENV.fetch('GOO_PORT', '9000').to_i
 MGREP_HOST       = ENV.fetch('MGREP_HOST', 'localhost')
-
-# MGREP_PORT       = ENV.fetch('MGREP_PORT', '55556').to_i
 MGREP_PORT       = ENV.fetch('MGREP_PORT', '55555').to_i
-
+MGREP_DICTIONARY_FILE = ENV.fetch('MGREP_DICTIONARY_FILE', './test/data/dictionary.txt')
 REDIS_GOO_CACHE_HOST  = ENV.fetch('REDIS_GOO_CACHE_HOST', 'localhost')
 REDIS_HTTP_CACHE_HOST = ENV.fetch('REDIS_HTTP_CACHE_HOST', 'localhost')
 REDIS_PERSISTENT_HOST = ENV.fetch('REDIS_PERSISTENT_HOST', 'localhost')
 REDIS_PORT            = ENV.fetch('REDIS_PORT', '6379').to_i
 REPORT_PATH           = ENV.fetch('REPORT_PATH', './test/ontologies_report.json')
 REPOSITORY_FOLDER     = ENV.fetch('REPOSITORY_FOLDER', './test/data/ontology_files/repo')
+REST_URL_PREFIX       = ENV.fetch('REST_URL_PREFIX', 'http://localhost:9393')
 SOLR_PROP_SEARCH_URL  = ENV.fetch('SOLR_PROP_SEARCH_URL', 'http://localhost:8983/solr/prop_search_core1')
 SOLR_TERM_SEARCH_URL  = ENV.fetch('SOLR_TERM_SEARCH_URL', 'http://localhost:8983/solr/term_search_core1')
 
@@ -44,7 +32,10 @@ LinkedData.config do |config|
   config.ontology_analytics_redis_port = REDIS_PORT.to_i
   config.search_server_url             = SOLR_TERM_SEARCH_URL.to_s
   config.property_search_server_url    = SOLR_PROP_SEARCH_URL.to_s
-  # config.enable_notifications          = false
+  config.replace_url_prefix            = true
+  config.rest_url_prefix               = REST_URL_PREFIX.to_s
+  #  config.enable_notifications          = false
+  config.id_url_prefix                 = REST_URL_PREFIX.to_s
 end
 
 Annotator.config do |config|
@@ -58,10 +49,11 @@ end
 LinkedData::OntologiesAPI.config do |config|
   config.http_redis_host = REDIS_HTTP_CACHE_HOST.to_s
   config.http_redis_port = REDIS_PORT.to_i
+  #  config.restrict_download = ["ACR0", "ACR1", "ACR2"]
 end
 
 NcboCron.config do |config|
   config.redis_host = REDIS_PERSISTENT_HOST.to_s
   config.redis_port = REDIS_PORT.to_i
-  #  config.ontology_report_path = REPORT_PATH
+  config.ontology_report_path = REPORT_PATH.to_s
 end
