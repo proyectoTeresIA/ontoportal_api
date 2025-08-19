@@ -70,3 +70,5 @@ production_*
 .env
 .env.*
 !.env.sample
+
+ncbo_cron.pid

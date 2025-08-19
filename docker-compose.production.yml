@@ -57,6 +57,72 @@ services:
       retries: 3
       start_period: 60s
 
+  # Production NcboCron Worker Service for processing ontologies
+  ncbo-cron-worker-production:
+    build:
+      context: .
+      args:
+        RUBY_VERSION: "3.1"
+    env_file:
+      - .env.production
+    environment:
+      BUNDLE_PATH: /srv/ontoportal/bundle
+      BUNDLE_APP_CONFIG: /srv/ontoportal/ontologies_api/.bundle
+      GOO_BACKEND_NAME: 4store
+      GOO_PORT: 9000
+      GOO_HOST: 4store-production
+      GOO_PATH_QUERY: /sparql/
+      GOO_PATH_DATA: /data/
+      GOO_PATH_UPDATE: /update/
+      REDIS_GOO_CACHE_HOST: redis-production
+      REDIS_HTTP_CACHE_HOST: redis-production
+      REDIS_PERSISTENT_HOST: redis-production
+      REDIS_PORT: 6379
+      REDIS_HOST: redis-production
+      ANNOTATOR_REDIS_HOST: redis-production
+      ANNOTATOR_REDIS_PORT: 6379
+      SOLR_TERM_SEARCH_URL: http://solr-production:8983/solr/term_search_core1
+      SOLR_PROP_SEARCH_URL: http://solr-production:8983/solr/prop_search_core1
+      MGREP_HOST: mgrep-production
+      MGREP_PORT: 55556
+
+    command: bash -c "cd /srv/ontoportal/ontologies_api && bundle exec ncbo_cron --log-level info & tail -f /srv/ontoportal/ontologies_api/log/scheduler.log"
+
+    volumes:
+      # Production Data Persistence
+      - production_data:/srv/ontoportal/data
+      - production_logs:/srv/ontoportal/logs
+      # Log directory (writable for application logs)
+      - production_app_logs:/srv/ontoportal/ontologies_api/log
+      # Bundle Volume (shared with development)
+      - bundle:/srv/ontoportal/bundle
+      # Code (read-only in production for security)
+      - .:/srv/ontoportal/ontologies_api:ro
+
+    depends_on:
+      4store-production:
+        condition: service_started
+      redis-production:
+        condition: service_healthy
+      solr-production:
+        condition: service_healthy
+      mgrep-production:
+        condition: service_healthy
+      api-production:
+        condition: service_started
+
+    restart: unless-stopped
+
+    # Resource limits for production cron worker
+    # deploy:
+    #   resources:
+    #     limits:
+    #       memory: 1G
+    #       cpus: "0.5"
+    #     reservations:
+    #       memory: 512M
+    #       cpus: "0.25"
+
   # Production-Dedicated 4store Database
   4store-production:
     image: bde2020/4store

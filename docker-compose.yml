@@ -81,6 +81,50 @@ services:
       agraph-ut:
         condition: service_healthy
 
+  # NcboCron Worker Service for processing ontologies (4store)
+  ncbo-cron-worker-4store:
+    <<: *app
+    command: bash -c "cd /srv/ontoportal/ontologies_api && bundle exec ncbo_cron --log-level info & tail -f /srv/ontoportal/ontologies_api/log/scheduler.log"
+    ports: []
+    environment:
+      <<: *env
+      GOO_BACKEND_NAME: 4store
+      GOO_PORT: 9000
+      GOO_HOST: 4store-ut
+      GOO_PATH_QUERY: /sparql/
+      GOO_PATH_DATA: /data/
+      GOO_PATH_UPDATE: /update/
+    profiles:
+      - 4store
+    depends_on:
+      <<: *depends_on
+      4store-ut:
+        condition: service_started
+      api:
+        condition: service_started
+
+  # NcboCron Worker Service for processing ontologies (agraph)
+  ncbo-cron-worker:
+    <<: *app
+    command: bash -c "cd /srv/ontoportal/ontologies_api && bundle exec ncbo_cron --log-level info & tail -f /srv/ontoportal/ontologies_api/log/scheduler.log"
+    ports: []
+    environment:
+      <<: *env
+      GOO_BACKEND_NAME: ag
+      GOO_PORT: 10035
+      GOO_HOST: agraph-ut
+      GOO_PATH_QUERY: /repositories/ontoportal_test
+      GOO_PATH_DATA: /repositories/ontoportal_test/statements
+      GOO_PATH_UPDATE: /repositories/ontoportal_test/statements
+    profiles:
+      - agraph
+    depends_on:
+      <<: *depends_on
+      agraph-ut:
+        condition: service_healthy
+      api-agraph:
+        condition: service_started
+
   redis-ut:
     image: redis
     ports:

@@ -1,3 +1,8 @@
+# Load required gems first
+require 'ontologies_linked_data'
+require 'ncbo_annotator'
+require 'ncbo_cron'
+
 GOO_BACKEND_NAME = ENV.fetch('GOO_BACKEND_NAME', '4store')
 GOO_HOST         = ENV.fetch('GOO_HOST', 'localhost')
 GOO_PATH_DATA    = ENV.fetch('GOO_PATH_DATA', '/data/')
@@ -53,7 +58,13 @@ LinkedData::OntologiesAPI.config do |config|
 end
 
 NcboCron.config do |config|
-  config.redis_host = REDIS_PERSISTENT_HOST.to_s
+  config.redis_host = ENV.fetch("REDIS_HOST", "redis-ut")
   config.redis_port = REDIS_PORT.to_i
   config.ontology_report_path = REPORT_PATH.to_s
+  
+  # Do not daemonize in Docker
+  config.daemonize = false
+  
+  # Processing intervals - check every minute
+  config.minutes_between = 1
 end
