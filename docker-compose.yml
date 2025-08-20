@@ -131,6 +131,8 @@ services:
       - "6379:6379"
       - "6380:6379"
       - "6381:6379"
+    volumes:
+      - redis-data:/data
     healthcheck:
       test: redis-cli ping
       interval: 10s
@@ -142,7 +144,8 @@ services:
     platform: linux/amd64
     ports:
       - "8081:9000"
-    #volume: fourstore:/var/lib/4store
+    volumes:
+      - 4store-data:/var/lib/4store
     command: >
       bash -c "4s-backend-setup --segments 4 ontoportal_kb
       && 4s-backend ontoportal_kb
@@ -154,6 +157,7 @@ services:
     image: solr:8
     volumes:
       - ./test/solr/configsets:/configsets:ro
+      - solr-data:/var/solr
     ports:
       - "8983:8983"
     command: >
@@ -188,6 +192,8 @@ services:
       - AGRAPH_SUPER_USER=test
       - AGRAPH_SUPER_PASSWORD=xyzzy
     shm_size: 1g
+    volumes:
+      - agraph-data:/agraph/data
     # ports:
     #  - 10035:10035
     command: >
@@ -209,3 +215,7 @@ volumes:
   bundle:
     name: ontoportal_api_bundle
     driver: local
+  redis-data:
+  4store-data:
+  solr-data:
+  agraph-data:
