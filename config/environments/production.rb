@@ -18,7 +18,7 @@ REDIS_PORT            = ENV.fetch('REDIS_PORT', '6379').to_i
 REPORT_PATH           = ENV.fetch('REPORT_PATH', './test/ontologies_report.json')
 REPOSITORY_FOLDER     = ENV.fetch('REPOSITORY_FOLDER', './test/data/ontology_files/repo')
 REST_URL_PREFIX       = ENV.fetch('REST_URL_PREFIX', 'http://localhost:9393')
-UI_HOSTNAME          = ENV.fetch('UI_HOSTNAME', 'localhost')
+UI_URL                = ENV.fetch('UI_URL', 'http://localhost:3000')
 SOLR_PROP_SEARCH_URL  = ENV.fetch('SOLR_PROP_SEARCH_URL', 'http://localhost:8983/solr/prop_search_core1')
 SOLR_TERM_SEARCH_URL  = ENV.fetch('SOLR_TERM_SEARCH_URL', 'http://localhost:8983/solr/term_search_core1')
 
@@ -31,7 +31,7 @@ LinkedData.config do |config|
   config.goo_path_update               = GOO_PATH_UPDATE.to_s
   
   config.rest_url_prefix               = REST_URL_PREFIX.to_s
-  config.ui_host                       = UI_HOSTNAME.to_s
+  config.ui_host                       = UI_URL.to_s
   config.search_server_url             = SOLR_TERM_SEARCH_URL.to_s
   config.property_search_server_url    = SOLR_PROP_SEARCH_URL.to_s
   config.repository_folder             = REPOSITORY_FOLDER.to_s
