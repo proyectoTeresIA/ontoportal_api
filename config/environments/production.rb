@@ -18,6 +18,7 @@ REDIS_PORT            = ENV.fetch('REDIS_PORT', '6379').to_i
 REPORT_PATH           = ENV.fetch('REPORT_PATH', './test/ontologies_report.json')
 REPOSITORY_FOLDER     = ENV.fetch('REPOSITORY_FOLDER', './test/data/ontology_files/repo')
 REST_URL_PREFIX       = ENV.fetch('REST_URL_PREFIX', 'http://localhost:9393')
+ID_URL_PREFIX         = ENV.fetch('ID_URL_PREFIX', ENV.fetch('REST_URL_PREFIX', 'http://localhost:9393'))
 UI_URL                = ENV.fetch('UI_URL', 'http://localhost:3000')
 SOLR_PROP_SEARCH_URL  = ENV.fetch('SOLR_PROP_SEARCH_URL', 'http://localhost:8983/solr/prop_search_core1')
 SOLR_TERM_SEARCH_URL  = ENV.fetch('SOLR_TERM_SEARCH_URL', 'http://localhost:8983/solr/term_search_core1')
@@ -72,7 +73,7 @@ LinkedData.config do |config|
   config.ontology_analytics_redis_host = REDIS_PERSISTENT_HOST.to_s
   config.ontology_analytics_redis_port = REDIS_PORT.to_i
 
-  config.id_url_prefix                 = REST_URL_PREFIX.to_s
+  config.id_url_prefix                 = ID_URL_PREFIX.to_s
 end
 
 Annotator.config do |config|

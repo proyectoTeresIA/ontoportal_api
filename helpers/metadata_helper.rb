@@ -9,11 +9,7 @@ module Sinatra
         all_attr = []
         klass.attributes(:all).each do |attr|
 
-          id_url_prefix = if LinkedData.settings.id_url_prefix.nil? || LinkedData.settings.id_url_prefix.empty?
-                            'http://data.bioontology.org/'
-                          else
-                            LinkedData.settings.id_url_prefix
-                          end
+          id_url_prefix = LinkedData.settings.id_url_prefix || LinkedData.settings.rest_url_prefix || 'http://localhost:9393/'
 
           attr_settings = {}
           attr_settings[:@id] = "#{id_url_prefix}#{type}/#{attr.to_s}"

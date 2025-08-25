@@ -9,8 +9,9 @@ require_relative 'config/environments/development'
 
 
 value_set_collections = ["NLMVS", "CEDARVS"]
-type_vs = LinkedData::Models::OntologyType.find(RDF::URI.new("http://data.bioontology.org/ontology_types/VALUE_SET_COLLECTION")).first
-type_ont = LinkedData::Models::OntologyType.find(RDF::URI.new("http://data.bioontology.org/ontology_types/ONTOLOGY")).first
+id_prefix = LinkedData.settings.id_url_prefix || LinkedData.settings.rest_url_prefix || 'http://localhost:9393/'
+type_vs = LinkedData::Models::OntologyType.find(RDF::URI.new("#{id_prefix}ontology_types/VALUE_SET_COLLECTION")).first
+type_ont = LinkedData::Models::OntologyType.find(RDF::URI.new("#{id_prefix}ontology_types/ONTOLOGY")).first
 
 
 # acronyms = ["iceci-details_for_activity", "Radlex3.9.1", "SNOMED-Ethnic-Group", "TM-SIGNS-AND-SYMPTS", "iceci-details_for_mechanism", "iceci-substance_use", "iceci-descriptor_for_intent", "iceci-instrument_object_substance", "H2_HIPClassicRegions", "iceci-countermeasures", "iceci-details_for_place_of_occurrence", "H3_HIPSeptotemporalAxis", "HOM-UCSF_UCareDispostion", "BRO-AreaOfResearch", "iceci-place_of_occurrence"]
