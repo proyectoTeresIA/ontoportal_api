@@ -51,7 +51,7 @@ services:
 
     # Health check for the API
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:9394/ || exit 1"]
+      test: ["CMD-SHELL", "curl -f http://localhost:9393/ || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -86,7 +86,7 @@ services:
       MGREP_HOST: mgrep-production
       MGREP_PORT: 55556
 
-    command: bash -c "cd /srv/ontoportal/ontologies_api && bundle exec ncbo_cron --log-level info & tail -f /srv/ontoportal/ontologies_api/log/scheduler.log"
+    command: bash /srv/ontoportal/ontologies_api/start-ncbo-cron.sh
 
     volumes:
       # Production Data Persistence
@@ -109,7 +109,7 @@ services:
       mgrep-production:
         condition: service_healthy
       api-production:
-        condition: service_started
+        condition: service_healthy
 
     restart: unless-stopped
 

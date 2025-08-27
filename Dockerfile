@@ -10,11 +10,13 @@ RUN apt-get update -yqq && apt-get install -yqq --no-install-recommends \
 
 RUN mkdir -p /srv/ontoportal/ontologies_api
 RUN mkdir -p /srv/ontoportal/bundle
+RUN mkdir -p /srv/ontoportal/ontologies_api/.bundle
 COPY Gemfile* /srv/ontoportal/ontologies_api/
 
 WORKDIR /srv/ontoportal/ontologies_api
 
 ENV BUNDLE_PATH=/srv/ontoportal/bundle
+ENV BUNDLE_APP_CONFIG=/srv/ontoportal/ontologies_api/.bundle
 RUN bundle install
 
 COPY . /srv/ontoportal/ontologies_api

@@ -63,6 +63,12 @@ services:
       <<: *depends_on
       4store-ut:
         condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9393/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
 
   api-agraph:
     <<: *app
@@ -80,11 +86,17 @@ services:
       <<: *depends_on
       agraph-ut:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9393/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
 
   # NcboCron Worker Service for processing ontologies (4store)
   ncbo-cron-worker-4store:
     <<: *app
-    command: bash -c "cd /srv/ontoportal/ontologies_api && bundle exec ncbo_cron --log-level info & tail -f /srv/ontoportal/ontologies_api/log/scheduler.log"
+    command: bash /srv/ontoportal/ontologies_api/start-ncbo-cron.sh
     ports: []
     environment:
       <<: *env
@@ -101,12 +113,12 @@ services:
       4store-ut:
         condition: service_started
       api:
-        condition: service_started
+        condition: service_healthy
 
   # NcboCron Worker Service for processing ontologies (agraph)
   ncbo-cron-worker:
     <<: *app
-    command: bash -c "cd /srv/ontoportal/ontologies_api && bundle exec ncbo_cron --log-level info & tail -f /srv/ontoportal/ontologies_api/log/scheduler.log"
+    command: bash /srv/ontoportal/ontologies_api/start-ncbo-cron.sh
     ports: []
     environment:
       <<: *env
@@ -123,7 +135,7 @@ services:
       agraph-ut:
         condition: service_healthy
       api-agraph:
-        condition: service_started
+        condition: service_healthy
 
   redis-ut:
     image: redis
