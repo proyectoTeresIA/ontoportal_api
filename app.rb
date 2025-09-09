@@ -73,7 +73,7 @@ if ENV['OVERRIDE_CONFIG'] == 'true'
     config.ontology_analytics_redis_port = ENV['REDIS_PORT']
     # Override URL prefixes for Docker environment (must come after environment config)
     config.rest_url_prefix   = ENV['REST_URL_PREFIX'] if ENV['REST_URL_PREFIX']
-    config.id_url_prefix     = ENV['ID_URL_PREFIX'] if ENV['ID_URL_PREFIX']
+    config.id_url_prefix     = ENV['REST_URL_PREFIX'] if ENV['REST_URL_PREFIX']
   end
 
   Annotator.config do |config|
