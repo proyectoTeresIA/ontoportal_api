@@ -10,7 +10,6 @@ bundle install --quiet
 # Find the ncbo_cron executable path
 NCBO_CRON_PATH=$(find /srv/ontoportal/bundle -name ncbo_cron -type f | head -1)
 
-echo "Found ncbo_cron at: $NCBO_CRON_PATH"
 echo "Starting ncbo_cron with minimal API initialization..."
 
 # Create a minimal wrapper that only loads what ncbo_cron needs
@@ -42,5 +41,11 @@ end
 load ARGV[0]
 EOF
 
+# Ensure the log directory and file exist before tailing
+mkdir -p /srv/ontoportal/ontologies_api/log
+touch /srv/ontoportal/ontologies_api/log/scheduler.log
+
 # Execute the minimal wrapper with the ncbo_cron path
 bundle exec ruby /tmp/ncbo_cron_minimal_wrapper.rb "$NCBO_CRON_PATH" --log-level info & tail -f /srv/ontoportal/ontologies_api/log/scheduler.log
+
+echo "ncbo_cron started"
