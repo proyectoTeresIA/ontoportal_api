@@ -35,7 +35,7 @@ else
   admin_user = LinkedData::Models::User.new({
     username: "admin",
     email: "admin@example.org",
-    password: "admin123",
+    password: ENV['ADMIN_PASSWORD'] || 'admin123',
     role: [admin_role]
   })
 
