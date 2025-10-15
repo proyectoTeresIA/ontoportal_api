@@ -1,0 +1,1 @@
+## Placeholder stopwords file for lexical_search core.

@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<schema name="lexical_search" version="1.6">
+  <uniqueKey>id</uniqueKey>
+  <field name="id" type="string" indexed="true" stored="true" required="true" multiValued="false" />
+  <field name="submissionId" type="plong" indexed="true" stored="true" multiValued="false" />
+  <field name="ontologyId" type="string" indexed="true" stored="true" multiValued="false" />
+  <field name="conceptId" type="string" indexed="true" stored="true" multiValued="false" />
+  <field name="conceptLabel" type="text_general" indexed="true" stored="true" multiValued="true" />
+  <field name="lemma" type="text_general" indexed="true" stored="true" multiValued="false" />
+  <field name="lemmaExact" type="string" indexed="true" stored="true" multiValued="false" />
+  <field name="writtenRep" type="text_general" indexed="true" stored="true" multiValued="true" />
+  <field name="writtenRepExact" type="string" indexed="true" stored="true" multiValued="true" />
+  <field name="definition" type="text_general" indexed="true" stored="true" multiValued="true" />
+  <field name="language" type="string" indexed="true" stored="true" multiValued="false" />
+  <field name="created" type="pdate" indexed="true" stored="true" multiValued="false" />
+  <field name="updated" type="pdate" indexed="true" stored="true" multiValued="false" />
+
+  <copyField source="writtenRep" dest="writtenRepExact"/>
+  <copyField source="lemma" dest="lemmaExact"/>
+
+  <fieldType name="string" class="solr.StrField" sortMissingLast="true" />
+  <fieldType name="plong" class="solr.LongPointField" />
+  <fieldType name="pdate" class="solr.DatePointField" />
+  <fieldType name="text_general" class="solr.TextField" positionIncrementGap="100">
+    <analyzer type="index">
+      <tokenizer class="solr.StandardTokenizerFactory"/>
+      <filter class="solr.LowerCaseFilterFactory"/>
+    </analyzer>
+    <analyzer type="query">
+      <tokenizer class="solr.StandardTokenizerFactory"/>
+      <filter class="solr.LowerCaseFilterFactory"/>
+    </analyzer>
+  </fieldType>
+</schema>
