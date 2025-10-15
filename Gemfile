@@ -47,10 +47,14 @@ gem 'goo', github: 'ncbo/goo', branch: 'master'
 gem 'ncbo_annotator', github: 'ncbo/ncbo_annotator', branch: 'master'
 gem 'ncbo_cron', github: 'ncbo/ncbo_cron', branch: 'master'
 gem 'ncbo_ontology_recommender', github: 'ncbo/ncbo_ontology_recommender', branch: 'master'
+# Use GitHub version of ontologies_linked_data
 gem 'ontologies_linked_data', github: 'proyectoTeresIA/ontologies_linked_data', branch: 'master'
 
 gem 'sys-proctable'
 gem 'sparql-client', github: 'ncbo/sparql-client', branch: 'master'
+
+# RDF serialization/parsers
+gem 'rdf-turtle', '~> 1.0'
 
 group :development do
   # bcrypt_pbkdf and ed35519 is required for capistrano deployments when using ed25519 keys; see https://github.com/miloserdow/capistrano-deploy/issues/42

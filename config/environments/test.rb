@@ -28,6 +28,7 @@ REPORT_PATH           = ENV.fetch('REPORT_PATH', './test/ontologies_report.json'
 REPOSITORY_FOLDER     = ENV.fetch('REPOSITORY_FOLDER', './test/data/ontology_files/repo')
 SOLR_PROP_SEARCH_URL  = ENV.fetch('SOLR_PROP_SEARCH_URL', 'http://localhost:8983/solr/prop_search_core1')
 SOLR_TERM_SEARCH_URL  = ENV.fetch('SOLR_TERM_SEARCH_URL', 'http://localhost:8983/solr/term_search_core1')
+SOLR_LEX_SEARCH_URL   = ENV.fetch('SOLR_LEXICAL_SEARCH_URL', 'http://localhost:8983/solr/lexical_search_core1')
 
 LinkedData.config do |config|
   config.goo_backend_name              = GOO_BACKEND_NAME.to_s
@@ -44,6 +45,7 @@ LinkedData.config do |config|
   config.ontology_analytics_redis_port = REDIS_PORT.to_i
   config.search_server_url             = SOLR_TERM_SEARCH_URL.to_s
   config.property_search_server_url    = SOLR_PROP_SEARCH_URL.to_s
+  config.lexical_search_server_url     = SOLR_LEX_SEARCH_URL.to_s
   # config.enable_notifications          = false
 end
 

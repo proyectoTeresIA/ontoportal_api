@@ -15,6 +15,12 @@ end
 
 Rake::TestTask.new do |t|
   t.libs = []
+  t.name = "test:ontolex"
+  t.test_files = FileList['test/controllers/test_ontolex_controller.rb']
+end
+
+Rake::TestTask.new do |t|
+  t.libs = []
   t.name = "test:models"
   t.test_files = FileList['test/models/test*.rb']
 end

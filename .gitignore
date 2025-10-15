@@ -72,3 +72,4 @@ production_*
 !.env.sample
 
 ncbo_cron.pid
+.vscode

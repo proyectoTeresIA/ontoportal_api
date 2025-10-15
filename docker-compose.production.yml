@@ -83,6 +83,7 @@ services:
       ANNOTATOR_REDIS_PORT: 6379
       SOLR_TERM_SEARCH_URL: http://solr-production:8983/solr/term_search_core1
       SOLR_PROP_SEARCH_URL: http://solr-production:8983/solr/prop_search_core1
+      SOLR_LEXICAL_SEARCH_URL: http://solr-production:8983/solr/lexical_search_core1
       MGREP_HOST: mgrep-production
       MGREP_PORT: 55556
 
@@ -210,13 +211,14 @@ services:
   solr-production:
     image: solr:8
     volumes:
-      - ./test/solr/configsets:/configsets:ro
+      - ./config/solr:/configsets:ro
       - production_solr:/var/solr
     ports:
       - "8984:8983" # Different port from development (8983)
     command: >
       bash -c "precreate-core term_search_core1 /configsets/term_search
       && precreate-core prop_search_core1 /configsets/property_search
+      && precreate-core lexical_search_core1 /configsets/lexical_search
       && solr-foreground"
     healthcheck:
       test:
