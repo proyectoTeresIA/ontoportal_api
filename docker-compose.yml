@@ -27,20 +27,17 @@ x-app: &app
     SOLR_LEXICAL_SEARCH_URL: http://solr-ut:8983/solr/lexical_search_core1
     MGREP_HOST: mgrep-ut
     MGREP_PORT: 55556
+    # Use local ontologies_linked_data from workspace
+    ONTLD_PATH: "/srv/ontologies_linked_data"
   stdin_open: true
   tty: true
-  command: "bundle exec rackup -o 0.0.0.0 --port 9393"
+  command: "bash -lc 'bundle install --jobs=3 && bundle exec rackup -o 0.0.0.0 --port 9393'"
   ports:
     - 9393:9393
   volumes:
-    # bundle volume for hosting gems installed by bundle; it helps in local development with gem updates
     - bundle:/srv/ontoportal/bundle
-    # api code
     - .:/srv/ontoportal/ontologies_api
-  # (disabled) local ontologies_linked_data mount; using GitHub gem
-  # - ../ontologies_linked_data:/srv/ontoportal/ontologies_linked_data
-  # mount directory containing development version of the gems if you need to use 'bundle config local'
-  #- /Users/alexskr/ontoportal:/Users/alexskr/ontoportal
+    - ../ontologies_linked_data:/srv/ontologies_linked_data
   depends_on: &depends_on
     solr-ut:
       condition: service_healthy

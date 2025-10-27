@@ -17,7 +17,6 @@ WORKDIR /srv/ontoportal/ontologies_api
 
 ENV BUNDLE_PATH=/srv/ontoportal/bundle
 ENV BUNDLE_APP_CONFIG=/srv/ontoportal/ontologies_api/.bundle
-RUN bundle install
 
 COPY . /srv/ontoportal/ontologies_api
 RUN cp /srv/ontoportal/ontologies_api/config/environments/config.rb.sample /srv/ontoportal/ontologies_api/config/environments/development.rb

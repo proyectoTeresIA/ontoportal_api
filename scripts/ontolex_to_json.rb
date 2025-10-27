@@ -92,30 +92,6 @@ end
 ontology = LinkedData::Models::Ontology.new(acronym: acronym, name: acronym)
 submission = LinkedData::Models::OntologySubmission.new(ontology: ontology, submissionId: 1)
 
-# Build RDF::Graph directly (avoids external 'rapper') and use gem's index_* methods
-def build_graph(path)
-  graph = RDF::Graph.new
-  ext = File.extname(path).downcase
-  reader_class = case ext
-                 when '.nt', '.ntriples' then RDF::NTriples::Reader
-                 when '.ttl', '.turtle' then RDF::Turtle::Reader
-                 else RDF::Turtle::Reader
-                 end
-  File.open(path, 'rb') do |io|
-    if reader_class == RDF::Turtle::Reader
-      base = RDF::URI("file://#{File.expand_path(path)}")
-      reader_class.new(io, base_uri: base) do |reader|
-        reader.each_statement { |st| graph << st }
-      end
-    else
-      reader_class.new(io) do |reader|
-        reader.each_statement { |st| graph << st }
-      end
-    end
-  end
-  graph
-end
-
 parsed = nil
 begin
   parsed = LinkedData::Parser::OntoLex.parse(FILE_PATH, submission)

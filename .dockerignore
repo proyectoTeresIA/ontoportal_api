@@ -17,3 +17,6 @@ coverage
 test/data/uploaded_ontologies/**/*
 test/data/ontology_files/repo/**/*
 test/log
+
+vendor
+.bundle

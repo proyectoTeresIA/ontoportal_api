@@ -27,6 +27,10 @@ begin
   PREFIX rdfs: <https://www.w3.org/1999/02/22-rdf-syntax-ns#>
     PREFIX ontolex: <http://www.w3.org/ns/lemon/ontolex#>
     PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
+    PREFIX lexinfo: <http://www.lexinfo.net/ontology/3.0/lexinfo#>
+    PREFIX vartrans: <http://www.w3.org/ns/lemon/vartrans#>
+    PREFIX lexicog: <http://www.w3.org/ns/lemon/lexicog#>
+    PREFIX dcterms: <http://purl.org/dc/terms/>
 
     # Copy lexical entries and their relationships from any source graph
   INSERT { GRAPH <#{g}> { ?e ?type ontolex:LexicalEntry } }
@@ -57,6 +61,32 @@ begin
     ;
     INSERT { GRAPH <#{g}> { ?s ontolex:isLexicalizedSenseOf ?c } }
     WHERE  { GRAPH ?src { ?s ontolex:isLexicalizedSenseOf ?c } FILTER (?src != <#{g}>) }
+    ;
+    # Also derive isLexicalizedSenseOf from the inverse lexicalizedSense when present
+    INSERT { GRAPH <#{g}> { ?s ontolex:isLexicalizedSenseOf ?c } }
+    WHERE  { GRAPH ?src { ?c ontolex:lexicalizedSense ?s } FILTER (?src != <#{g}>) }
+    ;
+    # Copy additional Sense relations and annotations
+    INSERT { GRAPH <#{g}> { ?s lexinfo:synonym ?s2 } }
+    WHERE  { GRAPH ?src { ?s lexinfo:synonym ?s2 } FILTER (?src != <#{g}>) }
+    ;
+    INSERT { GRAPH <#{g}> { ?s vartrans:translation ?t } }
+    WHERE  { GRAPH ?src { ?s vartrans:translation ?t } FILTER (?src != <#{g}>) }
+    ;
+    INSERT { GRAPH <#{g}> { ?s lexicog:usageExample ?u } }
+    WHERE  { GRAPH ?src { ?s lexicog:usageExample ?u } FILTER (?src != <#{g}>) }
+    ;
+    INSERT { GRAPH <#{g}> { ?s dcterms:example ?ex } }
+    WHERE  { GRAPH ?src { ?s dcterms:example ?ex } FILTER (?src != <#{g}>) }
+    ;
+    INSERT { GRAPH <#{g}> { ?s ontolex:reference ?r } }
+    WHERE  { GRAPH ?src { ?s ontolex:reference ?r } FILTER (?src != <#{g}>) }
+    ;
+    INSERT { GRAPH <#{g}> { ?s <http://termlex.oeg.fi.upm.es/termlex/reliabilityCode> ?rc } }
+    WHERE  { GRAPH ?src { ?s <http://termlex.oeg.fi.upm.es/termlex/reliabilityCode> ?rc } FILTER (?src != <#{g}>) }
+    ;
+    INSERT { GRAPH <#{g}> { ?s <http://termlex.oeg.fi.upm.es/termlex/usage> ?usg } }
+    WHERE  { GRAPH ?src { ?s <http://termlex.oeg.fi.upm.es/termlex/usage> ?usg } FILTER (?src != <#{g}>) }
     ;
     # Copy concept basics
   INSERT { GRAPH <#{g}> { ?c ?type skos:Concept } }

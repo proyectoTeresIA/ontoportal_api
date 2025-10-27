@@ -16,10 +16,32 @@ require 'rdf/ntriples'
 require 'open3'
 require 'shellwords'
 require 'fileutils'
+require 'cgi'
 require_relative '../config/config'
-require_relative '../config/environments/development'
+# Load the full API app so the script shares the exact same LinkedData configuration
+# (env, docker overrides, middlewares) as the running service
+require_relative '../app'
 
-REST = LinkedData.settings.rest_url_prefix || 'http://localhost:9393/'
+# Allow environment override similar to api/app.rb so this script targets the same backend
+if ENV['OVERRIDE_CONFIG'] == 'true'
+  LinkedData.config do |config|
+    config.goo_backend_name  = ENV['GOO_BACKEND_NAME'] if ENV['GOO_BACKEND_NAME']
+    config.goo_host          = ENV['GOO_HOST']         if ENV['GOO_HOST']
+    config.goo_port          = ENV['GOO_PORT'].to_i    if ENV['GOO_PORT']
+    config.goo_path_query    = ENV['GOO_PATH_QUERY']   if ENV['GOO_PATH_QUERY']
+    config.goo_path_data     = ENV['GOO_PATH_DATA']    if ENV['GOO_PATH_DATA']
+    config.goo_path_update   = ENV['GOO_PATH_UPDATE']  if ENV['GOO_PATH_UPDATE']
+    config.goo_redis_host    = ENV['REDIS_HOST']       if ENV['REDIS_HOST']
+    config.goo_redis_port    = ENV['REDIS_PORT']       if ENV['REDIS_PORT']
+    config.http_redis_host   = ENV['REDIS_HOST']       if ENV['REDIS_HOST']
+    config.http_redis_port   = ENV['REDIS_PORT']       if ENV['REDIS_PORT']
+    # URL prefixes
+    config.rest_url_prefix   = ENV['REST_URL_PREFIX']  if ENV['REST_URL_PREFIX']
+    config.id_url_prefix     = ENV['REST_URL_PREFIX']  if ENV['REST_URL_PREFIX']
+  end
+end
+
+REST = ENV['REST_URL_PREFIX'] || LinkedData.settings.rest_url_prefix || 'http://localhost:9393/'
 
 def ensure_contact
   c = LinkedData::Models::Contact.new
@@ -27,6 +49,18 @@ def ensure_contact
   c.email = 'admin@example.org'
   c.save
   c
+end
+
+def ensure_admin_user
+  # Find admin user by username; create a minimal admin if missing
+  user = LinkedData::Models::User.find('admin').first
+  unless user
+    user = LinkedData::Models::User.new(username: 'admin', email: 'admin@example.org', password: 'changeme')
+    unless user.save
+      raise "Failed to create admin user: #{user.errors.inspect}"
+    end
+  end
+  user
 end
 
 # Resolve file path relative to project root (Dir.pwd in container)
@@ -64,9 +98,14 @@ unless ont
   ont = LinkedData::Models::Ontology.new
   ont.acronym = acronym
   ont.name = name
-  ont.administeredBy = [LinkedData::Models::User.find('admin').first].compact
   ont.viewingRestriction = :public
-  ont.save if ont.valid?
+  # Ensure we have a persisted admin user to satisfy ontology validations
+  admin_user = ensure_admin_user
+  ont.administeredBy = [admin_user]
+  unless ont.save
+    warn "Ontology invalid: #{ont.errors.inspect}"
+    exit 1
+  end
 end
 
 sub = LinkedData::Models::OntologySubmission.new
@@ -98,10 +137,11 @@ else
   exit 1
 end
 
-# Parse OntoLex (ttl supported by rdf-turtle)
-LinkedData::Parser::OntoLex.parse(file.to_s, sub)
+# Skip gem OntoLex parser to avoid loader issues; skolemized triples will be loaded below
+# LinkedData::Parser::OntoLex.parse(file.to_s, sub)
 
 # Explicitly load all triples from the TTL into the submission named graph in batches
+# Skolemize blank nodes into stable IRIs so downstream Goo loads never fail on RDF::Node
 begin
   g = sub.id.to_s
   puts "[OntoLex] Loading all triples into submission graph: #{g}"
@@ -121,15 +161,29 @@ begin
     buffer.clear
   end
 
-  # Prefer converting TTL->N-Triples with rapper and stream lines to avoid Ruby Turtle base URI quirks
-  cmd = "rapper -i turtle -o ntriples #{Shellwords.escape(file)} 2>/dev/null"
-  IO.popen(["bash", "-lc", cmd], "r") do |io|
-    io.each_line do |line|
-      line = line.strip
-      next if line.empty?
-      buffer << line
-      flush.call if buffer.length >= batch_size
-    end
+  # Convert TTL->N-Triples using rapper, then parse with RDF::NTriples to skolemize
+  nt_content = `rapper -i turtle -o ntriples "#{file}" 2>/dev/null`
+  if !$?.success? || nt_content.empty?
+    raise StandardError, "rapper failed to convert TTL to N-Triples"
+  end
+  puts "[OntoLex] Converted TTL to N-Triples for ingest: #{nt_content.lines.count} lines"
+
+  base_prefix = (LinkedData.settings.id_url_prefix || REST).chomp('/')
+  skolem_for = Hash.new do |h, label|
+    iri = RDF::URI("#{base_prefix}/.well-known/genid/ontolex/#{sub.submissionId}/#{CGI.escape(label.to_s)}")
+    h[label] = iri
+  end
+
+  RDF::NTriples::Reader.new(nt_content).each_statement do |st|
+    s = st.subject
+    p = st.predicate
+    o = st.object
+    s = skolem_for[s.id] if s.is_a?(RDF::Node)
+    o = skolem_for[o.id] if o.is_a?(RDF::Node)
+    # Produce N-Triples line
+    line = "#{s.to_ntriples} #{p.to_ntriples} #{o.to_ntriples} ."
+    buffer << line
+    flush.call if buffer.length >= batch_size
   end
   flush.call
   puts "[OntoLex] Finished loading #{count} triples into submission graph"
@@ -140,6 +194,121 @@ end
 
 base_url = REST.chomp('/')
 puts "Created #{acronym} submission ##{sub.submissionId} from: #{file}"
+begin
+  g = sub.id.to_s
+  epr = Goo.sparql_query_client(:main)
+  ontolex = 'http://www.w3.org/ns/lemon/ontolex#'
+  lemon   = 'http://lemon-model.net/lemon#'
+
+  q = lambda do |sparql|
+    begin
+      epr.query(sparql, graphs: [g])
+    rescue StandardError => e
+      warn "[OntoLex][verify] SPARQL error: #{e.class}: #{e.message}"
+      []
+    end
+  end
+
+  # Counts by type
+  entry_row = q.call("SELECT (COUNT(DISTINCT ?s) AS ?c) WHERE { GRAPH <#{g}> { ?s a <#{ontolex}LexicalEntry> } }").first
+  form_row  = q.call("SELECT (COUNT(DISTINCT ?f) AS ?c) WHERE { GRAPH <#{g}> { { ?f a <#{ontolex}Form> } UNION { ?f a <#{lemon}Form> } } }").first
+  sense_row = q.call("SELECT (COUNT(DISTINCT ?se) AS ?c) WHERE { GRAPH <#{g}> { ?se a <#{ontolex}LexicalSense> } }").first
+  concept_row = q.call("SELECT (COUNT(DISTINCT ?cpt) AS ?c) WHERE { GRAPH <#{g}> { ?cpt a <#{ontolex}LexicalConcept> } }").first
+  entry_count = entry_row && entry_row[:c] ? entry_row[:c].to_i : nil
+  form_count  = form_row  && form_row[:c]  ? form_row[:c].to_i  : nil
+  sense_count = sense_row && sense_row[:c] ? sense_row[:c].to_i : nil
+  concept_count = concept_row && concept_row[:c] ? concept_row[:c].to_i : nil
+
+  puts "[OntoLex][verify] Counts in submission graph:"
+  puts "  LexicalEntry:     #{entry_count || 'N/A'}"
+  puts "  Form (ontolex/lemon): #{form_count || 'N/A'}"
+  puts "  LexicalSense:     #{sense_count || 'N/A'}"
+  puts "  LexicalConcept:   #{concept_count || 'N/A'}"
+
+  # Relationship counts (entry→form, entry→sense, entry→evokes concept)
+  rel_form_row = q.call([
+    'SELECT (COUNT(?f) AS ?c) WHERE {',
+    "  GRAPH <#{g}> {",
+    "    ?s a <#{ontolex}LexicalEntry> .",
+    "    ?s (<#{ontolex}form>|<#{ontolex}lexicalForm>|<#{ontolex}canonicalForm>|<#{ontolex}otherForm>|<#{lemon}form>|<#{lemon}canonicalForm>|<#{lemon}otherForm>) ?f .",
+    '    FILTER(isIRI(?f))',
+    '  }',
+    '}'
+  ].join("\n")).first
+  rel_form_count = rel_form_row && rel_form_row[:c] ? rel_form_row[:c].to_i : nil
+
+  rel_sense_row = q.call([
+    'SELECT (COUNT(?se) AS ?c) WHERE {',
+    "  GRAPH <#{g}> {",
+    "    ?s a <#{ontolex}LexicalEntry> .",
+    "    { ?s <#{ontolex}sense> ?se } UNION { ?se <#{ontolex}isSenseOf> ?s } UNION { ?s <#{ontolex}evokes> ?c . ?c <#{ontolex}lexicalizedSense> ?se } .",
+    '    FILTER(isIRI(?se))',
+    '  }',
+    '}'
+  ].join("\n")).first
+  rel_sense_count = rel_sense_row && rel_sense_row[:c] ? rel_sense_row[:c].to_i : nil
+
+  evokes_row = q.call([
+    'SELECT (COUNT(?cpt) AS ?c) WHERE {',
+    "  GRAPH <#{g}> {",
+    "    ?s a <#{ontolex}LexicalEntry> .",
+    "    ?s <#{ontolex}evokes> ?cpt .",
+    '  }',
+    '}'
+  ].join("\n")).first
+  evokes_count = evokes_row && evokes_row[:c] ? evokes_row[:c].to_i : nil
+
+  puts "[OntoLex][verify] Entry relations present:"
+  puts "  entry → form edges:  #{rel_form_count || 'N/A'}"
+  puts "  entry ↔ sense edges: #{rel_sense_count || 'N/A'}"
+  puts "  entry → concept (evokes): #{evokes_count || 'N/A'}"
+
+  # Sample one entry and show its forms/senses and a form's writtenRep
+  sample_row = q.call("SELECT ?s WHERE { GRAPH <#{g}> { ?s a <#{ontolex}LexicalEntry> } } ORDER BY ?s LIMIT 1").first
+  sample = sample_row && sample_row[:s] ? sample_row[:s].to_s : nil
+  if sample && !sample.empty?
+    puts "[OntoLex][verify] Sample entry: #{sample}"
+    forms = q.call([
+      'SELECT ?f WHERE {',
+      "  GRAPH <#{g}> {",
+      "    VALUES ?s { <#{sample}> }",
+      "    ?s (<#{ontolex}form>|<#{ontolex}lexicalForm>|<#{ontolex}canonicalForm>|<#{ontolex}otherForm>|<#{lemon}form>|<#{lemon}canonicalForm>|<#{lemon}otherForm>) ?f .",
+      '    FILTER(isIRI(?f))',
+      '  }',
+      '}'
+    ].join("\n")).map { |r| r[:f].to_s }
+    puts "  forms linked: #{forms.length}"
+
+    if forms.any?
+      f0 = forms.first
+      wrs = q.call([
+        'SELECT ?w WHERE {',
+        "  GRAPH <#{g}> {",
+        "    VALUES ?f { <#{f0}> }",
+        "    { ?f <#{ontolex}writtenRep> ?w } UNION { ?f <#{lemon}writtenRep> ?w }",
+        '  }',
+        '}'
+      ].join("\n")).map { |r| r[:w].to_s }
+      puts "  first form writtenRep: #{wrs.uniq.join(' | ')}"
+    end
+
+    senses = q.call([
+      'SELECT ?se WHERE {',
+      "  GRAPH <#{g}> {",
+      "    VALUES ?s { <#{sample}> }",
+      "    { ?s <#{ontolex}sense> ?se } UNION { ?se <#{ontolex}isSenseOf> ?s } UNION { ?s <#{ontolex}evokes> ?c . ?c <#{ontolex}lexicalizedSense> ?se } .",
+      '    FILTER(isIRI(?se))',
+      '  }',
+      '}'
+    ].join("\n")).map { |r| r[:se].to_s }
+    puts "  senses linked: #{senses.length}"
+  else
+    puts "[OntoLex][verify] No sample LexicalEntry found to inspect."
+  end
+rescue StandardError => e
+  warn "[OntoLex][verify] Verification failed: #{e.class}: #{e.message}"
+end
+
 puts "Try endpoints:"
 puts "  curl '#{base_url}/ontologies/#{acronym}/lexical_entries'"
 puts "  # Inspect ids from the list above, then:"

@@ -27,7 +27,7 @@ GIT
 
 GIT
   remote: https://github.com/ncbo/ncbo_cron.git
-  revision: 62deb80f4977002d8f0cdd9876087199ed61f081
+  revision: d85333ed06bdb985f78658202f4c743d4ef3c727
   branch: master
   specs:
     ncbo_cron (0.0.1)
@@ -80,10 +80,8 @@ GIT
     shotgun (0.9)
       rack (>= 1.0)
 
-GIT
-  remote: https://github.com/proyectoTeresIA/ontologies_linked_data.git
-  revision: 72edbd953724fe38f6b965ee89288263104ed2b6
-  branch: master
+PATH
+  remote: ../../ontologies_linked_data
   specs:
     ontologies_linked_data (0.0.1)
       activesupport
@@ -114,7 +112,7 @@ GEM
     airbrussh (1.5.3)
       sshkit (>= 1.6.1, != 1.7.0)
     ast (2.4.3)
-    backports (3.25.1)
+    backports (3.25.2)
     base64 (0.3.0)
     bcrypt (3.1.20)
     bcrypt_pbkdf (1.1.1)
@@ -151,7 +149,7 @@ GEM
       faraday-net_http (>= 2.0, < 3.5)
       json
       logger
-    faraday-follow_redirects (0.3.0)
+    faraday-follow_redirects (0.4.0)
       faraday (>= 1, < 3)
     faraday-net_http (3.4.1)
       net-http (>= 0.5.0)
@@ -172,7 +170,7 @@ GEM
       grpc (~> 1.66)
     get_process_mem (0.2.7)
       ffi (~> 1.0)
-    google-analytics-data (0.7.1)
+    google-analytics-data (0.7.2)
       google-analytics-data-v1beta (>= 0.11, < 2.a)
       google-cloud-core (~> 1.6)
     google-analytics-data-v1beta (0.17.0)
@@ -195,27 +193,27 @@ GEM
       grpc (~> 1.41)
     googleapis-common-protos-types (1.20.0)
       google-protobuf (>= 3.18, < 5.a)
-    googleauth (1.14.0)
+    googleauth (1.15.1)
       faraday (>= 1.0, < 3.a)
       google-cloud-env (~> 2.2)
       google-logging-utils (~> 0.1)
-      jwt (>= 1.4, < 3.0)
+      jwt (>= 1.4, < 4.0)
       multi_json (~> 1.11)
       os (>= 0.9, < 2.0)
       signet (>= 0.16, < 2.a)
-    grpc (1.74.1-aarch64-linux-gnu)
+    grpc (1.75.0-aarch64-linux-gnu)
       google-protobuf (>= 3.25, < 5.0)
       googleapis-common-protos-types (~> 1.0)
-    grpc (1.74.1-arm64-darwin)
+    grpc (1.75.0-arm64-darwin)
       google-protobuf (>= 3.25, < 5.0)
       googleapis-common-protos-types (~> 1.0)
-    grpc (1.74.1-x86_64-linux-gnu)
+    grpc (1.75.0-x86_64-linux-gnu)
       google-protobuf (>= 3.25, < 5.0)
       googleapis-common-protos-types (~> 1.0)
     haml (5.2.2)
       temple (>= 0.8.0)
       tilt
-    hashdiff (1.2.0)
+    hashdiff (1.2.1)
     http-accept (1.7.0)
     http-cookie (1.1.0)
       domain_name (~> 0.5)
@@ -225,7 +223,7 @@ GEM
     json-schema (2.8.1)
       addressable (>= 2.4)
     json_pure (2.8.1)
-    jwt (2.10.2)
+    jwt (3.1.2)
       base64
     kgio (2.11.4)
     language_server-protocol (3.17.0.5)
@@ -273,7 +271,7 @@ GEM
       net-protocol
     net-ssh (7.3.0)
     netrc (0.11.0)
-    newrelic_rpm (9.20.0)
+    newrelic_rpm (9.22.0)
     oj (3.16.11)
       bigdecimal (>= 3.0)
       ostruct (>= 0.2)
@@ -288,7 +286,7 @@ GEM
       racc
     pony (1.13.1)
       mail (>= 2.0)
-    prism (1.4.0)
+    prism (1.6.0)
     pry (0.15.2)
       coderay (~> 1.1)
       method_source (~> 1.0)
@@ -328,7 +326,7 @@ GEM
       redis-store (>= 1.6, < 2)
     redis-store (1.11.0)
       redis (>= 4, < 6)
-    regexp_parser (2.11.2)
+    regexp_parser (2.11.3)
     request_store (1.7.0)
       rack (>= 1.4)
     rest-client (2.1.0)
@@ -336,11 +334,11 @@ GEM
       http-cookie (>= 1.0.2, < 2.0)
       mime-types (>= 1.16, < 4.0)
       netrc (~> 0.8)
-    rexml (3.4.1)
+    rexml (3.4.4)
     rsolr (2.6.0)
       builder (>= 2.1.2)
       faraday (>= 0.9, < 3, != 2.0.0)
-    rubocop (1.80.0)
+    rubocop (1.81.1)
       json (~> 2.3)
       language_server-protocol (~> 3.17.0.2)
       lint_roller (~> 1.1.0)
@@ -348,27 +346,27 @@ GEM
       parser (>= 3.3.0.2)
       rainbow (>= 2.2.2, < 4.0)
       regexp_parser (>= 2.9.3, < 3.0)
-      rubocop-ast (>= 1.46.0, < 2.0)
+      rubocop-ast (>= 1.47.1, < 2.0)
       ruby-progressbar (~> 1.7)
       unicode-display_width (>= 2.4.0, < 4.0)
-    rubocop-ast (1.46.0)
+    rubocop-ast (1.47.1)
       parser (>= 3.3.7.2)
       prism (~> 1.4)
     ruby-progressbar (1.13.0)
     ruby-xxHash (0.4.0.2)
-    rubyzip (3.1.1)
+    rubyzip (3.2.0)
     rufus-scheduler (2.0.24)
       tzinfo (>= 0.3.22)
-    signet (0.20.0)
+    signet (0.21.0)
       addressable (~> 2.8)
       faraday (>= 0.17.5, < 3.a)
-      jwt (>= 1.5, < 3.0)
+      jwt (>= 1.5, < 4.0)
       multi_json (~> 1.10)
     simplecov (0.22.0)
       docile (~> 1.1)
       simplecov-html (~> 0.11)
       simplecov_json_formatter (~> 0.1)
-    simplecov-cobertura (3.0.0)
+    simplecov-cobertura (3.1.0)
       rexml
       simplecov (~> 0.19)
     simplecov-html (0.13.2)
@@ -405,9 +403,9 @@ GEM
     timeout (0.4.3)
     tzinfo (1.2.11)
       thread_safe (~> 0.1)
-    unicode-display_width (3.1.5)
-      unicode-emoji (~> 4.0, >= 4.0.4)
-    unicode-emoji (4.0.4)
+    unicode-display_width (3.2.0)
+      unicode-emoji (~> 4.1)
+    unicode-emoji (4.1.0)
     unicorn (6.1.0)
       kgio (~> 2.6)
       raindrops (~> 0.7)

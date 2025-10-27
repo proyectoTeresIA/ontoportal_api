@@ -13,6 +13,7 @@ require 'ncbo_cron'
 require 'rdf'
 require 'rdf/ntriples'
 require 'fileutils'
+require 'tmpdir'
 require 'cgi'
 require_relative '../config/config'
 require_relative '../config/environments/development'
@@ -44,10 +45,13 @@ nt_data = <<~NT
   <http://example.org/lex/concept1> <http://www.w3.org/2004/02/skos/core#prefLabel> "Test concept"@en .
 NT
 
-# Write to tmp path inside project root
-base = File.join(Dir.pwd, 'tmp')
-FileUtils.mkdir_p(base)
+# Write to a writable system temp path to avoid project permissions issues
+base = Dir.tmpdir
 nt_path = File.join(base, 'ontolex_sample_upload.nt')
+begin
+  FileUtils.rm_f(nt_path)
+rescue StandardError
+end
 File.write(nt_path, nt_data)
 
 # Create ontology (or update)
