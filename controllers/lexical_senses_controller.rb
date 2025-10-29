@@ -22,8 +22,9 @@ class LexicalSensesController < ApplicationController
 
       id = params[:splat].is_a?(Array) ? params[:splat].first : params[:splat]
       id = normalize_iri(id)
-  # Always use enriched read_only built with the same logic used by the list endpoint
-  sense = LinkedData::Models::OntoLex::LexicalSense.list_for_ids(submission, [id]).first
+      
+      # Always use enriched read_only built with the same logic used by the list endpoint
+      sense = LinkedData::Models::OntoLex::LexicalSense.list_for_ids(submission, [id]).first
       error 404, "LexicalSense not found: #{id}" if sense.nil?
       sense.ensure_computed rescue nil
       reply sense

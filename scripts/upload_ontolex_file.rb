@@ -137,59 +137,24 @@ else
   exit 1
 end
 
-# Skip gem OntoLex parser to avoid loader issues; skolemized triples will be loaded below
-# LinkedData::Parser::OntoLex.parse(file.to_s, sub)
-
-# Explicitly load all triples from the TTL into the submission named graph in batches
-# Skolemize blank nodes into stable IRIs so downstream Goo loads never fail on RDF::Node
+# Use the OntoLex parser which properly saves entities via Goo's .save() method
+# This ensures that Goo's .in().ids().include().all patterns work correctly
+puts "[OntoLex] Parsing and saving entities via Goo (this may take a while)..."
 begin
-  g = sub.id.to_s
-  puts "[OntoLex] Loading all triples into submission graph: #{g}"
-  batch_size = Integer(ENV['BATCH'] || 1000)
-  buffer = []
-  count = 0
-  flushed_batches = 0
-
-  flush = lambda do
-    return if buffer.empty?
-    data = buffer.join("\n")
-    sparql = "INSERT DATA { GRAPH <#{g}> {\n#{data}\n} }"
-    Goo.sparql_update_client.update(sparql)
-    count += buffer.length
-    flushed_batches += 1
-    puts "[OntoLex] Inserted batch ##{flushed_batches} (#{buffer.length} triples), total=#{count}"
-    buffer.clear
+  result = LinkedData::Parser::OntoLex.parse(file.to_s, sub)
+  if result
+    puts "[OntoLex] Successfully parsed and saved:"
+    puts "  - Entries: #{result[:entries]&.length || 0}"
+    puts "  - Senses: #{result[:senses]&.length || 0}"
+    puts "  - Concepts: #{result[:concepts]&.length || 0}"
+    puts "  - Forms: #{result[:forms]&.length || 0}"
+  else
+    puts "[OntoLex] Parser completed (no return value)"
   end
-
-  # Convert TTL->N-Triples using rapper, then parse with RDF::NTriples to skolemize
-  nt_content = `rapper -i turtle -o ntriples "#{file}" 2>/dev/null`
-  if !$?.success? || nt_content.empty?
-    raise StandardError, "rapper failed to convert TTL to N-Triples"
-  end
-  puts "[OntoLex] Converted TTL to N-Triples for ingest: #{nt_content.lines.count} lines"
-
-  base_prefix = (LinkedData.settings.id_url_prefix || REST).chomp('/')
-  skolem_for = Hash.new do |h, label|
-    iri = RDF::URI("#{base_prefix}/.well-known/genid/ontolex/#{sub.submissionId}/#{CGI.escape(label.to_s)}")
-    h[label] = iri
-  end
-
-  RDF::NTriples::Reader.new(nt_content).each_statement do |st|
-    s = st.subject
-    p = st.predicate
-    o = st.object
-    s = skolem_for[s.id] if s.is_a?(RDF::Node)
-    o = skolem_for[o.id] if o.is_a?(RDF::Node)
-    # Produce N-Triples line
-    line = "#{s.to_ntriples} #{p.to_ntriples} #{o.to_ntriples} ."
-    buffer << line
-    flush.call if buffer.length >= batch_size
-  end
-  flush.call
-  puts "[OntoLex] Finished loading #{count} triples into submission graph"
 rescue StandardError => e
-  warn "[WARN] Failed to bulk load triples into submission graph: #{e.class}: #{e.message}"
-  e.backtrace&.first(10)&.each { |ln| warn "  \e[90m#{ln}\e[0m" }
+  warn "[ERROR] OntoLex parser failed: #{e.class}: #{e.message}"
+  e.backtrace&.first(15)&.each { |ln| warn "  #{ln}" }
+  exit 1
 end
 
 base_url = REST.chomp('/')
