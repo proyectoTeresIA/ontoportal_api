@@ -80,10 +80,8 @@ GIT
     shotgun (0.9)
       rack (>= 1.0)
 
-GIT
-  remote: https://github.com/proyectoTeresIA/ontologies_linked_data.git
-  revision: 36aebc7c593759dcb6762b503baf54c8852e83c6
-  branch: master
+PATH
+  remote: ../../ontologies_linked_data
   specs:
     ontologies_linked_data (0.0.1)
       activesupport

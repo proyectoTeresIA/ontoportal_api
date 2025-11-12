@@ -8,10 +8,10 @@ class LexicalSensesController < ApplicationController
       check_last_modified_segment(LinkedData::Models::OntoLex::LexicalSense, [ont.acronym])
 
       page, size = page_params
+      total = LinkedData::Models::OntoLex::LexicalSense.count_in_submission(submission)
       ld = LinkedData::Models::OntoLex::LexicalSense.goo_attrs_to_load([:all])
       items = LinkedData::Models::OntoLex::LexicalSense.list_in_submission(submission, page, size, ld)
       items.each { |it| it.ensure_computed rescue nil }
-      total = LinkedData::Models::OntoLex::LexicalSense.count_in_submission(submission)
       reply page_object(items, total)
     end
 

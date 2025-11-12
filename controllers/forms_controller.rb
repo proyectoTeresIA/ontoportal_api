@@ -8,11 +8,11 @@ class FormsController < ApplicationController
       check_last_modified_segment(LinkedData::Models::OntoLex::Form, [ont.acronym])
 
       page, size = page_params
+      total = LinkedData::Models::OntoLex::Form.count_in_submission(submission)
       ld = LinkedData::Models::OntoLex::Form.goo_attrs_to_load([:all])
       items = LinkedData::Models::OntoLex::Form.list_in_submission(submission, page, size, ld)
       # Ensure computed attributes for robust serialization (e.g., writtenRep)
       items.each { |it| it.ensure_computed rescue nil }
-      total = LinkedData::Models::OntoLex::Form.count_in_submission(submission)
       reply page_object(items, total)
     end
 

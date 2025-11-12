@@ -10,9 +10,9 @@ class LexicalEntriesController < ApplicationController
       check_last_modified_segment(LinkedData::Models::OntoLex::LexicalEntry, [ont.acronym])
 
       page, size = page_params
+      total = LinkedData::Models::OntoLex::LexicalEntry.count_in_submission(submission)
       ld = LinkedData::Models::OntoLex::LexicalEntry.goo_attrs_to_load([:all])
       items = LinkedData::Models::OntoLex::LexicalEntry.list_in_submission(submission, page, size, ld)
-      total = LinkedData::Models::OntoLex::LexicalEntry.count_in_submission(submission)
       reply page_object(items, total)
     end
 

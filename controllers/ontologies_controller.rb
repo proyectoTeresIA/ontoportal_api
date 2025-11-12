@@ -88,6 +88,7 @@ class OntologiesController < ApplicationController
       populate_from_params(ont, params)
       if ont.valid?
         ont.save
+        ont.bring(*Ontology.goo_attrs_to_load(includes_param))
       else
         error 422, ont.errors
       end
@@ -170,6 +171,7 @@ class OntologiesController < ApplicationController
 
       if ont.valid?
         ont.save
+        ont.bring(*Ontology.goo_attrs_to_load(includes_param))
       else
         error 422, ont.errors
       end
