@@ -14,7 +14,6 @@ RUN mkdir -p /srv/ontoportal/ontologies_api
 RUN mkdir -p /srv/ontoportal/bundle
 RUN mkdir -p /srv/ontoportal/ontologies_api/.bundle
 COPY Gemfile* /srv/ontoportal/ontologies_api/
-
 WORKDIR /srv/ontoportal/ontologies_api
 
 ENV BUNDLE_PATH=/srv/ontoportal/bundle
@@ -22,9 +21,10 @@ ENV BUNDLE_APP_CONFIG=/srv/ontoportal/ontologies_api/.bundle
 ENV BUNDLE_WITHOUT="development test"
 ENV BUNDLE_DEPLOYMENT=true
 
+RUN bundle install --jobs 4 --retry 3
+
 COPY . /srv/ontoportal/ontologies_api
 
-RUN bundle install --jobs 4 --retry 3
 RUN cp /srv/ontoportal/ontologies_api/config/environments/config.rb.sample /srv/ontoportal/ontologies_api/config/environments/development.rb
 
 EXPOSE 9393
