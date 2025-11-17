@@ -24,6 +24,7 @@ ENV BUNDLE_DEPLOYMENT=true
 
 COPY . /srv/ontoportal/ontologies_api
 
+RUN bundle install --jobs 4 --retry 3
 RUN cp /srv/ontoportal/ontologies_api/config/environments/config.rb.sample /srv/ontoportal/ontologies_api/config/environments/development.rb
 
 EXPOSE 9393
