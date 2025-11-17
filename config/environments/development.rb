@@ -22,6 +22,7 @@ ID_URL_PREFIX         = ENV.fetch('ID_URL_PREFIX', ENV.fetch('REST_URL_PREFIX', 
 UI_URL                = ENV.fetch('UI_URL', 'http://localhost:3000')
 SOLR_PROP_SEARCH_URL  = ENV.fetch('SOLR_PROP_SEARCH_URL', 'http://localhost:8983/solr/prop_search_core1')
 SOLR_TERM_SEARCH_URL  = ENV.fetch('SOLR_TERM_SEARCH_URL', 'http://localhost:8983/solr/term_search_core1')
+SOLR_LEX_SEARCH_URL   = ENV.fetch('SOLR_LEXICAL_SEARCH_URL', 'http://localhost:8983/solr/lexical_search_core1')
 
 LinkedData.config do |config|
   config.goo_host                      = GOO_HOST.to_s
@@ -35,6 +36,7 @@ LinkedData.config do |config|
   config.ui_host                       = UI_URL.to_s
   config.search_server_url             = SOLR_TERM_SEARCH_URL.to_s
   config.property_search_server_url    = SOLR_PROP_SEARCH_URL.to_s
+  config.lexical_search_server_url     = SOLR_LEX_SEARCH_URL.to_s
   config.repository_folder             = REPOSITORY_FOLDER.to_s
   config.replace_url_prefix            = true
   config.enable_security               = true

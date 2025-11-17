@@ -23,10 +23,10 @@ class SearchController < ApplicationController
       case resource_type
       when 'class', 'classes'
         return process_class_search(params, text)
-      when 'lexical_entry', 'lexical_entries', 'lexical'
+      when 'form', 'forms', 'lexical'
         return process_lexical_search(params, text)
       else
-        error 400, "Unsupported resource_type '#{resource_type}'. Use 'class' or 'lexical_entry'."
+        error 400, "Unsupported resource_type '#{resource_type}'. Use 'class' or 'form'."
       end
     end
 
@@ -80,34 +80,57 @@ class SearchController < ApplicationController
       reply 200, page
     end
 
-    # Minimal OntoLex lexical entry search. If a dedicated Solr index is present
-    # and LinkedData::Models::OntoLex::LexicalEntry responds to :search, we use it.
-    # Otherwise, we fallback to in-memory filtering of entries' forms.writtenRep for the requested ontology.
+    # OntoLex lexical entry search with full Solr support
+    # Supports language filtering, subject/domain filtering, and all standard search features
     def process_lexical_search(params, text)
       set_page_params(params)
 
       # Try Solr first if available
-      if LinkedData::Models::OntoLex::LexicalEntry.respond_to?(:search)
-        # Reuse existing query builder for pagination params; lexical-specific qf should be handled by backend
-        query = text.to_s.strip.empty? ? '*:*' : text
-        resp = LinkedData::Models::OntoLex::LexicalEntry.search(query, params)
+      if LinkedData::Models::OntoLex::Form.respond_to?(:search)
+        # Build lexical-specific query
+        query = get_lexical_search_query(text, params)
+        # puts "Lexical search query: #{query}, params: #{params}"
+        
+        resp = LinkedData::Models::OntoLex::Form.search(query, params)
         total_found = resp["response"]["numFound"]
-
+        add_matched_fields(resp, Sinatra::Helpers::SearchHelper::MATCH_TYPE_PREFLABEL)
+        
         docs = []
         resp["response"]["docs"].each do |doc|
           d = doc.symbolize_keys
+          # Add match type from highlighting
+          d[:matchType] = resp["match_types"][d[:id]] if resp["match_types"]
+          
           resource_id = d[:resource_id]
           d.delete :resource_id
           d[:id] = resource_id
+          
           ontology_uri = d[:ontologyId].sub(/\/submissions\/.*/, "") rescue nil
           next unless ontology_uri
+          
           ontology = LinkedData::Models::Ontology.read_only(id: ontology_uri, acronym: d[:submissionAcronym])
           submission = LinkedData::Models::OntologySubmission.read_only(id: d[:ontologyId], ontology: ontology)
           d[:submission] = submission
           d[:properties] = MultiJson.load(d.delete(:propertyRaw)) if include_param_contains?(:properties)
-          instance = LinkedData::Models::OntoLex::LexicalEntry.read_only(d)
+          
+          # Remove Solr-specific suggest fields but keep enriched fields for serialization
+          d.delete(:writtenRepExact)
+          d.delete(:lemmaExact)
+          d.delete(:lemmaSuggestEdge)
+          d.delete(:lemmaSuggestNgram)
+          d.delete(:writtenRepSuggestEdge)
+          d.delete(:writtenRepSuggestNgram)
+          
+          instance = LinkedData::Models::OntoLex::Form.read_only(d)
+          filter_language_attributes(params, instance)
           docs << instance
         end
+        
+        # Sort by score (already sorted by Solr, but ensure consistency)
+        unless params['sort']
+          docs.sort! { |a, b| b[:score] <=> a[:score] }
+        end
+        
         page = page_object(docs, total_found)
         return reply 200, page
       end
@@ -122,33 +145,29 @@ class SearchController < ApplicationController
 
       page, size = page_params(params)
       q = (text || '').strip.downcase
-      include_attrs = [:form]
-      entries = []
+      include_attrs = []
+      forms = []
       if sub
-        entries = LinkedData::Models::OntoLex::LexicalEntry.in(sub).include(include_attrs).page(page, size).all
+        forms = LinkedData::Models::OntoLex::Form.in(sub).include(include_attrs).page(page, size).all
       else
-        # As a last resort (e.g., in tests), search across all entries
-        entries = LinkedData::Models::OntoLex::LexicalEntry.where.include(include_attrs).all
+        # As a last resort (e.g., in tests), search across all forms
+        forms = LinkedData::Models::OntoLex::Form.where.include(include_attrs).all
       end
 
-      # Simple filter by writtenRep of forms (case-insensitive substring). If q is empty, return page unchanged.
+      # Simple filter by writtenRep (case-insensitive substring). If q is empty, return page unchanged.
       if !q.empty?
-        entries.select! do |e|
-          next false if e.form.nil?
-          e.form.any? do |f|
-            reps = f.respond_to?(:writtenRep) ? Array(f.writtenRep) : []
-            reps.any? { |r| r.to_s.downcase.include?(q) }
-          end
+        forms.select! do |f|
+          reps = f.respond_to?(:writtenRep) ? Array(f.writtenRep) : []
+          reps.any? { |r| r.to_s.downcase.include?(q) }
         end
       end
 
-      # Sort by first match alphabetically for determinism
-      entries.sort_by! do |e|
-        lab = e.form&.first&.writtenRep
-        Array(lab).first.to_s.downcase
+      # Sort by writtenRep alphabetically for determinism
+      forms.sort_by! do |f|
+        Array(f.writtenRep).first.to_s.downcase
       end
 
-      page_obj = page_object(entries, entries.length)
+      page_obj = page_object(forms, forms.length)
       reply 200, page_obj
     end
 

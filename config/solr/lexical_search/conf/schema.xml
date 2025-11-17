@@ -2,29 +2,93 @@
 <schema name="lexical_search" version="1.6">
   <uniqueKey>id</uniqueKey>
   <field name="id" type="string" indexed="true" stored="true" required="true" multiValued="false" />
+  <field name="resource_id" type="string" indexed="true" stored="true" multiValued="false" />
   <field name="submissionId" type="plong" indexed="true" stored="true" multiValued="false" />
+  <field name="submissionAcronym" type="string" indexed="true" stored="true" multiValued="false" />
   <field name="ontologyId" type="string" indexed="true" stored="true" multiValued="false" />
-  <field name="conceptId" type="string" indexed="true" stored="true" multiValued="false" />
-  <field name="conceptLabel" type="text_general" indexed="true" stored="true" multiValued="true" />
+
+  <!-- Core lexical fields -->
   <field name="lemma" type="text_general" indexed="true" stored="true" multiValued="false" />
   <field name="lemmaExact" type="string" indexed="true" stored="true" multiValued="false" />
+  <field name="lemmaSuggestEdge" type="text_suggest_edge" indexed="true" stored="false" multiValued="false" />
+  <field name="lemmaSuggestNgram" type="text_suggest_ngram" indexed="true" stored="false" multiValued="false" />
+
   <field name="writtenRep" type="text_general" indexed="true" stored="true" multiValued="true" />
   <field name="writtenRepExact" type="string" indexed="true" stored="true" multiValued="true" />
-  <field name="definition" type="text_general" indexed="true" stored="true" multiValued="true" />
+  <field name="writtenRepSuggestEdge" type="text_suggest_edge" indexed="true" stored="false" multiValued="true" />
+  <field name="writtenRepSuggestNgram" type="text_suggest_ngram" indexed="true" stored="false" multiValued="true" />
+
+  <!-- Language and linguistic features -->
   <field name="language" type="string" indexed="true" stored="true" multiValued="false" />
+  <field name="partOfSpeech" type="string" indexed="true" stored="true" multiValued="false" />
+  <field name="termType" type="string" indexed="true" stored="true" multiValued="false" />
+  <field name="gender" type="string" indexed="true" stored="true" multiValued="false" />
+  <field name="number" type="string" indexed="true" stored="true" multiValued="false" />
+
+  <!-- References to lexical entries that use this form -->
+  <field name="lexicalEntries" type="string" indexed="true" stored="true" multiValued="true" />
+
+  <!-- Semantic fields -->
+  <field name="definition" type="text_general" indexed="true" stored="true" multiValued="true" />
+  <field name="example" type="text_general" indexed="true" stored="true" multiValued="true" />
+  <field name="concept" type="string" indexed="true" stored="true" multiValued="true" />
+  <field name="conceptLabel" type="text_general" indexed="true" stored="true" multiValued="true" />
+
+  <!-- Domain/subject fields (from dct:subject in LexicalConcept) -->
+  <field name="subject" type="string" indexed="true" stored="true" multiValued="true" />
+  <field name="subjectLabel" type="text_general" indexed="true" stored="true" multiValued="true" />
+
+  <!-- Properties for advanced search -->
+  <field name="property" type="text_general" indexed="true" stored="false" multiValued="true" />
+  <field name="propertyRaw" type="string" indexed="false" stored="true" multiValued="false" />
+
+  <!-- Metadata -->
   <field name="created" type="pdate" indexed="true" stored="true" multiValued="false" />
   <field name="updated" type="pdate" indexed="true" stored="true" multiValued="false" />
 
+  <!-- Copy fields for exact matching and suggestions -->
   <copyField source="writtenRep" dest="writtenRepExact"/>
+  <copyField source="writtenRep" dest="writtenRepSuggestEdge"/>
+  <copyField source="writtenRep" dest="writtenRepSuggestNgram"/>
   <copyField source="lemma" dest="lemmaExact"/>
+  <copyField source="lemma" dest="lemmaSuggestEdge"/>
+  <copyField source="lemma" dest="lemmaSuggestNgram"/>
 
+  <!-- Field type definitions -->
   <fieldType name="string" class="solr.StrField" sortMissingLast="true" />
   <fieldType name="plong" class="solr.LongPointField" />
   <fieldType name="pdate" class="solr.DatePointField" />
+
   <fieldType name="text_general" class="solr.TextField" positionIncrementGap="100">
     <analyzer type="index">
       <tokenizer class="solr.StandardTokenizerFactory"/>
       <filter class="solr.LowerCaseFilterFactory"/>
+    </analyzer>
+    <analyzer type="query">
+      <tokenizer class="solr.StandardTokenizerFactory"/>
+      <filter class="solr.LowerCaseFilterFactory"/>
+    </analyzer>
+  </fieldType>
+
+  <!-- Edge n-gram for autocomplete/suggest (beginning of words) -->
+  <fieldType name="text_suggest_edge" class="solr.TextField" positionIncrementGap="100">
+    <analyzer type="index">
+      <tokenizer class="solr.StandardTokenizerFactory"/>
+      <filter class="solr.LowerCaseFilterFactory"/>
+      <filter class="solr.EdgeNGramFilterFactory" minGramSize="2" maxGramSize="25"/>
+    </analyzer>
+    <analyzer type="query">
+      <tokenizer class="solr.StandardTokenizerFactory"/>
+      <filter class="solr.LowerCaseFilterFactory"/>
+    </analyzer>
+  </fieldType>
+
+  <!-- N-gram for partial matching anywhere in text -->
+  <fieldType name="text_suggest_ngram" class="solr.TextField" positionIncrementGap="100">
+    <analyzer type="index">
+      <tokenizer class="solr.StandardTokenizerFactory"/>
+      <filter class="solr.LowerCaseFilterFactory"/>
+      <filter class="solr.NGramFilterFactory" minGramSize="3" maxGramSize="15"/>
     </analyzer>
     <analyzer type="query">
       <tokenizer class="solr.StandardTokenizerFactory"/>

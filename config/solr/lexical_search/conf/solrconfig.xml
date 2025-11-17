@@ -16,13 +16,28 @@
     <lst name="defaults">
       <str name="defType">edismax</str>
       <str name="echoParams">explicit</str>
-      <str name="qf">lemmaExact^100 lemma^50 writtenRepExact^80 writtenRep^40 conceptLabel^10 definition^5</str>
+      <str name="qf">writtenRepExact^100 writtenRep^80 lemmaExact^90 lemma^50 conceptLabel^20 definition^10 subjectLabel^15</str>
       <str name="hl">on</str>
-      <str name="hl.fl">lemmaExact lemma writtenRepExact writtenRep conceptLabel definition</str>
+      <str name="hl.fl">writtenRepExact writtenRep lemmaExact lemma conceptLabel definition subjectLabel</str>
       <str name="fl">*,score</str>
       <int name="rows">50</int>
     </lst>
   </requestHandler>
+
+  <!-- Suggest handler for autocomplete -->
+  <requestHandler name="/suggest_ncbo" class="solr.SearchHandler">
+    <lst name="defaults">
+      <str name="defType">edismax</str>
+      <str name="echoParams">explicit</str>
+      <str name="qf">writtenRepExact^100 writtenRepSuggestEdge^80 lemmaSuggestEdge^70 writtenRepSuggestNgram^30 lemmaSuggestNgram^20</str>
+      <str name="pf">writtenRepExact^50 lemmaExact^40</str>
+      <str name="hl">on</str>
+      <str name="hl.fl">writtenRepExact writtenRepSuggestEdge lemmaSuggestEdge</str>
+      <str name="fl">*,score</str>
+      <int name="rows">50</int>
+    </lst>
+  </requestHandler>
+
   <requestHandler name="/update" class="solr.UpdateRequestHandler"/>
 </config>
 <!-- {{SOLRCONFIG_TERM_PLACEHOLDER}} -->
