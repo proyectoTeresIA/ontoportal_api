@@ -47,7 +47,15 @@ gem 'goo', github: 'ncbo/goo', branch: 'master'
 gem 'ncbo_annotator', github: 'ncbo/ncbo_annotator', branch: 'master'
 gem 'ncbo_cron', github: 'ncbo/ncbo_cron', branch: 'master'
 gem 'ncbo_ontology_recommender', github: 'ncbo/ncbo_ontology_recommender', branch: 'master'
-gem 'ontologies_linked_data', github: 'proyectoTeresIA/ontologies_linked_data', branch: 'master'
+
+# ontologies_linked_data: use local path in development (when ONTLD_PATH is set), GitHub in production
+if ENV['ONTLD_PATH'] && Dir.exist?(ENV['ONTLD_PATH'])
+  # Development: use local path (mounted via Docker volume)
+  gem 'ontologies_linked_data', path: ENV['ONTLD_PATH']
+else
+  # Production: use GitHub repository
+  gem 'ontologies_linked_data', github: 'proyectoTeresIA/ontologies_linked_data', branch: 'master'
+end
 
 gem 'sys-proctable'
 gem 'sparql-client', github: 'ncbo/sparql-client', branch: 'master'

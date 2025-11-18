@@ -21,6 +21,7 @@
   <!-- Language and linguistic features -->
   <field name="language" type="string" indexed="true" stored="true" multiValued="false" />
   <field name="partOfSpeech" type="string" indexed="true" stored="true" multiValued="false" />
+  <field name="partOfSpeechLabel" type="string" indexed="true" stored="false" multiValued="false" />
   <field name="termType" type="string" indexed="true" stored="true" multiValued="false" />
   <field name="gender" type="string" indexed="true" stored="true" multiValued="false" />
   <field name="number" type="string" indexed="true" stored="true" multiValued="false" />
@@ -63,10 +64,12 @@
     <analyzer type="index">
       <tokenizer class="solr.StandardTokenizerFactory"/>
       <filter class="solr.LowerCaseFilterFactory"/>
+      <filter class="solr.ASCIIFoldingFilterFactory" preserveOriginal="false"/>
     </analyzer>
     <analyzer type="query">
       <tokenizer class="solr.StandardTokenizerFactory"/>
       <filter class="solr.LowerCaseFilterFactory"/>
+      <filter class="solr.ASCIIFoldingFilterFactory" preserveOriginal="false"/>
     </analyzer>
   </fieldType>
 
@@ -75,11 +78,13 @@
     <analyzer type="index">
       <tokenizer class="solr.StandardTokenizerFactory"/>
       <filter class="solr.LowerCaseFilterFactory"/>
+      <filter class="solr.ASCIIFoldingFilterFactory" preserveOriginal="false"/>
       <filter class="solr.EdgeNGramFilterFactory" minGramSize="2" maxGramSize="25"/>
     </analyzer>
     <analyzer type="query">
       <tokenizer class="solr.StandardTokenizerFactory"/>
       <filter class="solr.LowerCaseFilterFactory"/>
+      <filter class="solr.ASCIIFoldingFilterFactory" preserveOriginal="false"/>
     </analyzer>
   </fieldType>
 
@@ -88,11 +93,13 @@
     <analyzer type="index">
       <tokenizer class="solr.StandardTokenizerFactory"/>
       <filter class="solr.LowerCaseFilterFactory"/>
+      <filter class="solr.ASCIIFoldingFilterFactory" preserveOriginal="false"/>
       <filter class="solr.NGramFilterFactory" minGramSize="3" maxGramSize="15"/>
     </analyzer>
     <analyzer type="query">
       <tokenizer class="solr.StandardTokenizerFactory"/>
       <filter class="solr.LowerCaseFilterFactory"/>
+      <filter class="solr.ASCIIFoldingFilterFactory" preserveOriginal="false"/>
     </analyzer>
   </fieldType>
 </schema>

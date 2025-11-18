@@ -74,6 +74,12 @@ if ENV['OVERRIDE_CONFIG'] == 'true'
     # Override URL prefixes for Docker environment (must come after environment config)
     config.rest_url_prefix   = ENV['REST_URL_PREFIX'] if ENV['REST_URL_PREFIX']
     config.id_url_prefix     = ENV['REST_URL_PREFIX'] if ENV['REST_URL_PREFIX']
+    # Override repository folder for Docker environment
+    config.repository_folder = ENV['REPOSITORY_FOLDER'] if ENV['REPOSITORY_FOLDER']
+    # Override Solr URLs for Docker environment
+    config.search_server_url          = ENV['SOLR_TERM_SEARCH_URL'] if ENV['SOLR_TERM_SEARCH_URL']
+    config.property_search_server_url = ENV['SOLR_PROP_SEARCH_URL'] if ENV['SOLR_PROP_SEARCH_URL']
+    config.lexical_search_server_url  = ENV['SOLR_LEXICAL_SEARCH_URL'] if ENV['SOLR_LEXICAL_SEARCH_URL']
   end
 
   Annotator.config do |config|

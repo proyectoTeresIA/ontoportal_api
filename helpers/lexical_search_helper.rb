@@ -46,14 +46,20 @@ module Sinatra
           params["pf"] = "writtenRepExact^50 lemmaExact^40"
           params["hl.fl"] = "writtenRepExact writtenRepSuggestEdge lemmaSuggestEdge"
         else
-          # Regular search
+          # Regular search - flexible mode with automatic wildcards
           if text.strip.empty? || text == '*'
             query = '*:*'
           else
-            query = solr_escape(text)
+            # Add wildcards for partial matching if not already present
+            search_text = text.strip
+            unless search_text.include?('*') || search_text.start_with?('"')
+              search_text = "*#{search_text}*"
+            end
+            query = solr_escape(search_text)
           end
-          params["qf"] = "writtenRepExact^100 writtenRep^80 lemmaExact^90 lemma^50 conceptLabel^20 definition^10 subjectLabel^15 resource_id^100"
-          params["hl.fl"] = "writtenRepExact writtenRep lemmaExact lemma conceptLabel definition subjectLabel resource_id"
+          # Prioritize text_general fields (with ASCII folding) over Exact fields
+          params["qf"] = "writtenRep^100 lemma^90 writtenRepExact^80 lemmaExact^70 conceptLabel^30 definition^20 subjectLabel^25 resource_id^50"
+          params["hl.fl"] = "writtenRep lemma writtenRepExact lemmaExact conceptLabel definition subjectLabel resource_id"
         end
 
         # Build filter query
@@ -82,9 +88,17 @@ module Sinatra
           filter_query = filter_query.empty? ? subject_clause : "#{filter_query} AND #{subject_clause}"
         end
 
-        # Part of speech filtering
+        # Part of speech filtering - support both URI and simple label
         if params[PART_OF_SPEECH_PARAM] && !params[PART_OF_SPEECH_PARAM].empty?
-          pos_clause = "partOfSpeech:#{params[PART_OF_SPEECH_PARAM]}"
+          pos_value = params[PART_OF_SPEECH_PARAM].strip
+          # If it looks like a simple label (e.g., "noun"), search in both fields
+          if pos_value.include?('#') || pos_value.include?('/')
+            # It's a URI or fragment, search exact
+            pos_clause = "partOfSpeech:#{pos_value}"
+          else
+            # Simple label - search in both partOfSpeech (URI) and partOfSpeechLabel
+            pos_clause = "(partOfSpeech:*#{pos_value}* OR partOfSpeechLabel:#{pos_value})"
+          end
           filter_query = filter_query.empty? ? pos_clause : "#{filter_query} AND #{pos_clause}"
         end
 

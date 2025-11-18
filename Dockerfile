@@ -21,7 +21,14 @@ ENV BUNDLE_APP_CONFIG=/srv/ontoportal/ontologies_api/.bundle
 ENV BUNDLE_WITHOUT="development test"
 ENV BUNDLE_DEPLOYMENT=true
 
-RUN bundle install --jobs 4 --retry 3
+# In production (no ONTLD_PATH), install dependencies at build time
+# In development, dependencies are installed at runtime when volume is mounted
+ARG INSTALL_DEPS=true
+RUN if [ "$INSTALL_DEPS" = "true" ]; then \
+      bundle config set --local deployment 'true' && \
+      bundle config set --local without 'development test' && \
+      bundle install; \
+    fi
 
 COPY . /srv/ontoportal/ontologies_api
 
