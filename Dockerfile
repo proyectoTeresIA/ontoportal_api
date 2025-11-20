@@ -25,7 +25,7 @@ ENV BUNDLE_DEPLOYMENT=true
 # In development, dependencies are installed at runtime when volume is mounted
 ARG INSTALL_DEPS=true
 RUN if [ "$INSTALL_DEPS" = "true" ]; then \
-      bundle install --jobs 4 --retry 3 \
+      bundle install --jobs 4 --retry 3; \
     fi
 
 COPY . /srv/ontoportal/ontologies_api
