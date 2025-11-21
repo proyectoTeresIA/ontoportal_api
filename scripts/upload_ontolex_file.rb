@@ -68,7 +68,7 @@ end
 # Resolve file path; by default, expect it under tmp at project root (api folder in container)
 tmp_dir = File.join(Dir.pwd, 'tmp')
 FileUtils.mkdir_p(tmp_dir)
-default_name = 'aparells_sanitarios_rdf.ttl'
+default_name = 'ejemplo_sintetico.ttl'
 default_path = File.join(tmp_dir, default_name)
 file = ENV['FILE'] || default_path
 unless File.exist?(file)
