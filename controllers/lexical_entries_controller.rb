@@ -31,6 +31,69 @@ class LexicalEntriesController < ApplicationController
       reply senses
     end
 
+    # Get the label (writtenRep) for a lexical entry
+    # This is similar to the /ajax/classes/label endpoint for regular ontologies
+    # Must be before the wildcard /* route
+    get '/*/label' do
+      ont, submission = get_ontology_and_submission
+      splat = params['splat'] || params[:splat]
+      id = splat.is_a?(Array) ? splat.first : splat
+      halt 400, 'Missing LexicalEntry id' if id.nil? || id.empty?
+      id = normalize_iri(id)
+      
+      # Query for the entry's form writtenRep directly from SPARQL
+      query = <<-SPARQL
+SELECT ?rep
+WHERE {
+  GRAPH <#{submission.id}> {
+    <#{id}> <http://www.w3.org/ns/lemon/ontolex#form> ?form .
+    ?form <http://www.w3.org/ns/lemon/ontolex#writtenRep> ?rep .
+  }
+}
+LIMIT 1
+      SPARQL
+      
+      epr = Goo.sparql_query_client(:main)
+      solutions = epr.query(query)
+      
+      if solutions.length > 0
+        label = solutions.first[:rep].to_s
+        reply({ label: label })
+      else
+        # Fallback: try to extract from ID
+        # e.g., "...C1_ca_absorciometre_noun_entry" -> "absorciometre"
+        id_parts = id.to_s.split('_')
+        label = id.to_s.split('/').last  # default to last part of URI
+        
+        if id_parts.length >= 3
+          lang_idx = id_parts.index { |p| p.length == 2 && p =~ /^[a-z]{2}$/ }
+          if lang_idx && id_parts[lang_idx + 1]
+            term = id_parts[lang_idx + 1]
+            label = term unless term =~ /^(noun|verb|adj|entry|form)$/
+          end
+        end
+        
+        reply({ label: label })
+      end
+    end
+
+    # Get mappings for a lexical entry
+    # Must be before the wildcard /* route
+    get '/*/mappings' do
+      ont, submission = get_ontology_and_submission
+      splat = params['splat'] || params[:splat]
+      id = splat.is_a?(Array) ? splat.first : splat
+      halt 400, 'Missing LexicalEntry id' if id.nil? || id.empty?
+      id = normalize_iri(id)
+      
+      # Get mappings for this lexical entry
+      # Include LOOM and SAME_URI mappings as well as REST/CUI
+      entry_uri = RDF::URI.new(id)
+      sources = ["REST", "CUI", "LOOM", "SAME_URI"]
+      mappings = LinkedData::Mappings.mappings_for_classids([entry_uri], sources)
+      reply mappings || []
+    end
+
     # Fetch a single lexical entry by IRI (encoded or with slashes)
     get '/*' do
       includes_param_check(LinkedData::Models::OntoLex::LexicalEntry)
