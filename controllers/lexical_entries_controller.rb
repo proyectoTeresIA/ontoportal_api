@@ -33,7 +33,6 @@ class LexicalEntriesController < ApplicationController
 
     # Get the label (writtenRep) for a lexical entry
     # This is similar to the /ajax/classes/label endpoint for regular ontologies
-    # Must be before the wildcard /* route
     get '/*/label' do
       ont, submission = get_ontology_and_submission
       splat = params['splat'] || params[:splat]
@@ -41,24 +40,23 @@ class LexicalEntriesController < ApplicationController
       halt 400, 'Missing LexicalEntry id' if id.nil? || id.empty?
       id = normalize_iri(id)
       
-      # Query for the entry's form writtenRep directly from SPARQL
+      # Query for all the entry's form writtenReps directly from SPARQL
       query = <<-SPARQL
-SELECT ?rep
+SELECT DISTINCT ?rep
 WHERE {
   GRAPH <#{submission.id}> {
     <#{id}> <http://www.w3.org/ns/lemon/ontolex#form> ?form .
     ?form <http://www.w3.org/ns/lemon/ontolex#writtenRep> ?rep .
   }
 }
-LIMIT 1
       SPARQL
       
       epr = Goo.sparql_query_client(:main)
       solutions = epr.query(query)
       
       if solutions.length > 0
-        label = solutions.first[:rep].to_s
-        reply({ label: label })
+        label_values = solutions.map { |sol| sol[:rep].to_s }.reject(&:empty?).uniq
+        reply({ label: label_values.join(', ') })
       else
         # Fallback: try to extract from ID
         # e.g., "...C1_ca_absorciometre_noun_entry" -> "absorciometre"
