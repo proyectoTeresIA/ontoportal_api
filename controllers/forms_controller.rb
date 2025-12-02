@@ -8,11 +8,31 @@ class FormsController < ApplicationController
       check_last_modified_segment(LinkedData::Models::OntoLex::Form, [ont.acronym])
 
       page, size = page_params
-      total = LinkedData::Models::OntoLex::Form.count_in_submission(submission)
+      search_query = (params['q'] || '').strip.downcase
+      
+      # Get ALL items first for global sorting
       ld = LinkedData::Models::OntoLex::Form.goo_attrs_to_load([:all])
-      items = LinkedData::Models::OntoLex::Form.list_in_submission(submission, page, size, ld)
-      # Ensure computed attributes for robust serialization (e.g., writtenRep)
-      items.each { |it| it.ensure_computed rescue nil }
+      all_items = LinkedData::Models::OntoLex::Form.list_in_submission(submission, 1, 100000, ld)
+      
+      # Ensure computed attributes
+      all_items.each { |it| it.ensure_computed rescue nil }
+      
+      # Apply search filter if present
+      unless search_query.empty?
+        all_items.select! do |item|
+          rep = item.writtenRep.to_s.downcase
+          rep.include?(search_query)
+        end
+      end
+      
+      # Sort ALL items alphabetically (global sort)
+      all_items.sort_by! { |item| (item.writtenRep || item.id.to_s.split('/').last).to_s.downcase }
+      
+      # Now apply pagination on sorted results
+      total = all_items.length
+      start_idx = (page - 1) * size
+      items = all_items.slice(start_idx, size) || []
+      
       reply page_object(items, total)
     end
 

@@ -9,9 +9,33 @@ class LexicalConceptsController < ApplicationController
       check_last_modified_segment(LinkedData::Models::OntoLex::LexicalConcept, [ont.acronym])
 
       page, size = page_params
-      total = LinkedData::Models::OntoLex::LexicalConcept.count_in_submission(submission)
+      search_query = (params['q'] || '').strip.downcase
+      
+      # Get ALL items first for global sorting
       ld = LinkedData::Models::OntoLex::LexicalConcept.goo_attrs_to_load([:all])
-      items = LinkedData::Models::OntoLex::LexicalConcept.list_in_submission(submission, page, size, ld)
+      all_items = LinkedData::Models::OntoLex::LexicalConcept.list_in_submission(submission, 1, 100000, ld)
+      
+      # Build a cache of labels
+      label_cache = {}
+      all_items.each do |item|
+        label_cache[item.id.to_s] = get_concept_label(item).downcase
+      end
+      
+      # Apply search filter if present
+      unless search_query.empty?
+        all_items.select! do |item|
+          label_cache[item.id.to_s].include?(search_query)
+        end
+      end
+      
+      # Sort ALL items alphabetically (global sort)
+      all_items.sort_by! { |item| label_cache[item.id.to_s] }
+      
+      # Now apply pagination on sorted results
+      total = all_items.length
+      start_idx = (page - 1) * size
+      items = all_items.slice(start_idx, size) || []
+      
       reply page_object(items, total)
     end
 
@@ -48,6 +72,27 @@ class LexicalConceptsController < ApplicationController
       end
       val = val.sub(/^(https?):\/(?!\/)/, '\1://')
       val
+    end
+
+    # Get a display label for a lexical concept
+    def get_concept_label(concept)
+      # Try to get label from definition
+      if concept.respond_to?(:definition) && concept.definition
+        defs = Array(concept.definition)
+        defs.each do |d|
+          if d.is_a?(Hash)
+            return d['label'].to_s if d['label'] && !d['label'].to_s.empty?
+            return d['value'].to_s if d['value'] && !d['value'].to_s.empty?
+          elsif d.respond_to?(:label) && d.label
+            return d.label.to_s
+          elsif d.respond_to?(:value) && d.value
+            return d.value.to_s
+          end
+        end
+      end
+      
+      # Fallback to last part of ID
+      concept.id.to_s.split('/').last
     end
 
     def includes_param_check(klass)

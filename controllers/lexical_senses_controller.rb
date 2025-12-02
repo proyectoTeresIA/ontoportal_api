@@ -8,10 +8,36 @@ class LexicalSensesController < ApplicationController
       check_last_modified_segment(LinkedData::Models::OntoLex::LexicalSense, [ont.acronym])
 
       page, size = page_params
-      total = LinkedData::Models::OntoLex::LexicalSense.count_in_submission(submission)
+      search_query = (params['q'] || '').strip.downcase
+      
+      # Get ALL items first for global sorting
       ld = LinkedData::Models::OntoLex::LexicalSense.goo_attrs_to_load([:all])
-      items = LinkedData::Models::OntoLex::LexicalSense.list_in_submission(submission, page, size, ld)
-      items.each { |it| it.ensure_computed rescue nil }
+      all_items = LinkedData::Models::OntoLex::LexicalSense.list_in_submission(submission, 1, 100000, ld)
+      
+      # Ensure computed attributes
+      all_items.each { |it| it.ensure_computed rescue nil }
+      
+      # Build a cache of labels
+      label_cache = {}
+      all_items.each do |item|
+        label_cache[item.id.to_s] = get_sense_label(item).downcase
+      end
+      
+      # Apply search filter if present
+      unless search_query.empty?
+        all_items.select! do |item|
+          label_cache[item.id.to_s].include?(search_query)
+        end
+      end
+      
+      # Sort ALL items alphabetically (global sort)
+      all_items.sort_by! { |item| label_cache[item.id.to_s] }
+      
+      # Now apply pagination on sorted results
+      total = all_items.length
+      start_idx = (page - 1) * size
+      items = all_items.slice(start_idx, size) || []
+      
       reply page_object(items, total)
     end
 
@@ -38,6 +64,22 @@ class LexicalSensesController < ApplicationController
         leftover = includes_param - allowed
         error(400, "Invalid include params: #{leftover.join(", ")}") unless leftover.empty?
       end
+    end
+
+    # Get a display label for a lexical sense
+    def get_sense_label(sense)
+      # Try definition first
+      if sense.respond_to?(:definition) && sense.definition && !sense.definition.to_s.empty?
+        return sense.definition.to_s
+      end
+      
+      # Try example
+      if sense.respond_to?(:example) && sense.example && !sense.example.to_s.empty?
+        return sense.example.to_s
+      end
+      
+      # Fallback to last part of ID
+      sense.id.to_s.split('/').last
     end
 
     def normalize_iri(raw)

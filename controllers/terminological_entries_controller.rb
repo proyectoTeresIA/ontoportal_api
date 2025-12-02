@@ -11,39 +11,30 @@ class TerminologicalEntriesController < ApplicationController
       check_last_modified_segment(LinkedData::Models::OntoLex::LexicalEntry, [ont.acronym])
 
       page, size = page_params
-      total = LinkedData::Models::OntoLex::LexicalEntry.count_in_submission(submission)
+      search_query = (params['q'] || '').strip.downcase
       
-      # Load lexical entries with minimal attributes + form URIs
+      # Get ALL entries first for global sorting
       ld = LinkedData::Models::OntoLex::LexicalEntry.goo_attrs_to_load([:language, :form])
-      entries = LinkedData::Models::OntoLex::LexicalEntry.list_in_submission(submission, page, size, ld)
+      all_entries = LinkedData::Models::OntoLex::LexicalEntry.list_in_submission(submission, 1, 100000, ld)
       
-      # Enrich entries with form writtenReps
-      enriched_entries = entries.map do |entry|
-        # Build hash manually with only loaded attributes
-        entry_hash = {
-          '@id' => entry.id.to_s,
-          'id' => entry.id.to_s
-        }
-        
-        # Add language if loaded
-        entry_hash['language'] = entry.language.to_s if entry.language
-        
-        # Add form URIs if loaded
-        if entry.form && !entry.form.empty?
-          form_ids = Array(entry.form)
-          entry_hash['form'] = form_ids.map(&:to_s)
-          
-          # Load forms and extract writtenReps
-          forms_ld = LinkedData::Models::OntoLex::Form.goo_attrs_to_load([:writtenRep])
-          forms = LinkedData::Models::OntoLex::Form.list_for_ids(submission, form_ids, forms_ld)
-          entry_hash['writtenReps'] = forms.map { |f| f.writtenRep }.compact
-        else
-          entry_hash['form'] = []
-          entry_hash['writtenReps'] = []
+      # Enrich all entries with form writtenReps
+      all_enriched = all_entries.map { |entry| enrich_entry(entry, submission) }
+      
+      # Apply search filter if present
+      unless search_query.empty?
+        all_enriched.select! do |entry_hash|
+          reps = entry_hash['writtenReps'] || []
+          reps.any? { |rep| rep.to_s.downcase.include?(search_query) }
         end
-        
-        entry_hash
       end
+      
+      # Sort ALL items alphabetically (global sort)
+      all_enriched.sort_by! { |e| (e['writtenReps']&.first || e['@id'].to_s.split('/').last).to_s.downcase }
+      
+      # Now apply pagination on sorted results
+      total = all_enriched.length
+      start_idx = (page - 1) * size
+      enriched_entries = all_enriched.slice(start_idx, size) || []
       
       reply page_object(enriched_entries, total)
     end
@@ -139,6 +130,33 @@ class TerminologicalEntriesController < ApplicationController
     end
 
     private
+    
+    # Enrich a lexical entry with form writtenReps
+    def enrich_entry(entry, submission)
+      entry_hash = {
+        '@id' => entry.id.to_s,
+        'id' => entry.id.to_s
+      }
+      
+      # Add language if loaded
+      entry_hash['language'] = entry.language.to_s if entry.language
+      
+      # Add form URIs if loaded
+      if entry.form && !entry.form.empty?
+        form_ids = Array(entry.form)
+        entry_hash['form'] = form_ids.map(&:to_s)
+        
+        # Load forms and extract writtenReps
+        forms_ld = LinkedData::Models::OntoLex::Form.goo_attrs_to_load([:writtenRep])
+        forms = LinkedData::Models::OntoLex::Form.list_for_ids(submission, form_ids, forms_ld)
+        entry_hash['writtenReps'] = forms.map { |f| f.writtenRep }.compact
+      else
+        entry_hash['form'] = []
+        entry_hash['writtenReps'] = []
+      end
+      
+      entry_hash
+    end
     
     def normalize_iri(raw)
       val = raw.to_s

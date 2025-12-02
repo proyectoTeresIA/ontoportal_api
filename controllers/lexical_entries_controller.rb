@@ -10,9 +10,33 @@ class LexicalEntriesController < ApplicationController
       check_last_modified_segment(LinkedData::Models::OntoLex::LexicalEntry, [ont.acronym])
 
       page, size = page_params
-      total = LinkedData::Models::OntoLex::LexicalEntry.count_in_submission(submission)
+      search_query = (params['q'] || '').strip.downcase
+      
+      # Get ALL items first for global sorting
       ld = LinkedData::Models::OntoLex::LexicalEntry.goo_attrs_to_load([:all])
-      items = LinkedData::Models::OntoLex::LexicalEntry.list_in_submission(submission, page, size, ld)
+      all_items = LinkedData::Models::OntoLex::LexicalEntry.list_in_submission(submission, 1, 100000, ld)
+      
+      # Build a cache of labels to avoid repeated lookups
+      label_cache = {}
+      all_items.each do |item|
+        label_cache[item.id.to_s] = get_entry_label(item, submission).downcase
+      end
+      
+      # Apply search filter if present
+      unless search_query.empty?
+        all_items.select! do |item|
+          label_cache[item.id.to_s].include?(search_query)
+        end
+      end
+      
+      # Sort ALL items alphabetically (global sort)
+      all_items.sort_by! { |item| label_cache[item.id.to_s] }
+      
+      # Now apply pagination on sorted results
+      total = all_items.length
+      start_idx = (page - 1) * size
+      items = all_items.slice(start_idx, size) || []
+      
       reply page_object(items, total)
     end
 
@@ -163,6 +187,27 @@ WHERE {
       val
     end
 
+    # Get a display label for a lexical entry (lemma or writtenRep from forms)
+    def get_entry_label(entry, submission)
+      # Try lemma first
+      return entry.lemma.to_s if entry.respond_to?(:lemma) && entry.lemma && !entry.lemma.to_s.empty?
+      
+      # Try to get writtenRep from forms
+      if entry.respond_to?(:form) && entry.form && !entry.form.empty?
+        form_ids = Array(entry.form)
+        begin
+          forms_ld = LinkedData::Models::OntoLex::Form.goo_attrs_to_load([:writtenRep])
+          forms = LinkedData::Models::OntoLex::Form.list_for_ids(submission, form_ids, forms_ld)
+          reps = forms.map { |f| f.writtenRep }.compact
+          return reps.first.to_s unless reps.empty?
+        rescue StandardError
+          # Fallback to ID
+        end
+      end
+      
+      # Fallback to last part of ID
+      entry.id.to_s.split('/').last
+    end
 
     def includes_param_check(klass)
       if includes_param && !includes_param.empty?
