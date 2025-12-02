@@ -10,33 +10,43 @@ class LexicalSensesController < ApplicationController
       page, size = page_params
       search_query = (params['q'] || '').strip.downcase
       
-      # Get ALL items first for global sorting
-      ld = LinkedData::Models::OntoLex::LexicalSense.goo_attrs_to_load([:all])
-      all_items = LinkedData::Models::OntoLex::LexicalSense.list_in_submission(submission, 1, 100000, ld)
+      # OPTIMIZATION: Load only minimal attributes needed for sorting/filtering
+      # definition is the primary label for senses
+      minimal_attrs = [:definition]
+      all_items = LinkedData::Models::OntoLex::LexicalSense.in(submission).include(*minimal_attrs).all
       
-      # Ensure computed attributes
-      all_items.each { |it| it.ensure_computed rescue nil }
-      
-      # Build a cache of labels
-      label_cache = {}
-      all_items.each do |item|
-        label_cache[item.id.to_s] = get_sense_label(item).downcase
+      # Build sort/filter data from minimal loaded attributes
+      items_with_labels = all_items.map do |item|
+        label = (item.definition || item.id.to_s.split('/').last).to_s
+        { id: item.id, label: label, label_lower: label.downcase }
       end
       
       # Apply search filter if present
       unless search_query.empty?
-        all_items.select! do |item|
-          label_cache[item.id.to_s].include?(search_query)
-        end
+        items_with_labels.select! { |item| item[:label_lower].include?(search_query) }
       end
       
       # Sort ALL items alphabetically (global sort)
-      all_items.sort_by! { |item| label_cache[item.id.to_s] }
+      items_with_labels.sort_by! { |item| item[:label_lower] }
       
-      # Now apply pagination on sorted results
-      total = all_items.length
+      # Calculate pagination
+      total = items_with_labels.length
       start_idx = (page - 1) * size
-      items = all_items.slice(start_idx, size) || []
+      page_items = items_with_labels.slice(start_idx, size) || []
+      
+      # OPTIMIZATION: Only load full attributes for the paginated items
+      if page_items.any?
+        page_ids = page_items.map { |item| item[:id] }
+        items = LinkedData::Models::OntoLex::LexicalSense.list_for_ids(submission, page_ids)
+        
+        # Preserve sort order from page_items
+        id_to_item = items.index_by { |i| i.id.to_s }
+        items = page_ids.map { |id| id_to_item[id.to_s] }.compact
+        
+        items.each { |it| it.ensure_computed rescue nil }
+      else
+        items = []
+      end
       
       reply page_object(items, total)
     end

@@ -10,28 +10,40 @@ class FormsController < ApplicationController
       page, size = page_params
       search_query = (params['q'] || '').strip.downcase
       
-      # Get ALL items first for global sorting
-      ld = LinkedData::Models::OntoLex::Form.goo_attrs_to_load([:all])
-      all_items = LinkedData::Models::OntoLex::Form.list_in_submission(submission, 1, 100000, ld)
+      # Load only minimal attributes needed for sorting/filtering
+      minimal_attrs = [:writtenRep]
+      all_items = LinkedData::Models::OntoLex::Form.in(submission).include(*minimal_attrs).all
       
-      # Ensure computed attributes
-      all_items.each { |it| it.ensure_computed rescue nil }
-      
-      # Apply search filter if present
-      unless search_query.empty?
-        all_items.select! do |item|
-          rep = item.writtenRep.to_s.downcase
-          rep.include?(search_query)
-        end
+      # Build sort/filter data from minimal loaded attributes
+      items_with_labels = all_items.map do |item|
+        label = (item.writtenRep || item.id.to_s.split('/').last).to_s
+        { id: item.id, label: label, label_lower: label.downcase }
       end
       
-      # Sort ALL items alphabetically (global sort)
-      all_items.sort_by! { |item| (item.writtenRep || item.id.to_s.split('/').last).to_s.downcase }
+      unless search_query.empty?
+        items_with_labels.select! { |item| item[:label_lower].include?(search_query) }
+      end
       
-      # Now apply pagination on sorted results
-      total = all_items.length
+      items_with_labels.sort_by! { |item| item[:label_lower] }
+      
+      total = items_with_labels.length
       start_idx = (page - 1) * size
-      items = all_items.slice(start_idx, size) || []
+      page_items = items_with_labels.slice(start_idx, size) || []
+      
+      # Only load full attributes for the paginated items
+      if page_items.any?
+        page_ids = page_items.map { |item| item[:id] }
+        full_ld = LinkedData::Models::OntoLex::Form.goo_attrs_to_load([:all])
+        items = LinkedData::Models::OntoLex::Form.list_for_ids(submission, page_ids, full_ld)
+        
+        # Preserve sort order from page_items
+        id_to_item = items.index_by { |i| i.id.to_s }
+        items = page_ids.map { |id| id_to_item[id.to_s] }.compact
+        
+        items.each { |it| it.ensure_computed rescue nil }
+      else
+        items = []
+      end
       
       reply page_object(items, total)
     end

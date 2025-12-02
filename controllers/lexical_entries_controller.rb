@@ -12,36 +12,43 @@ class LexicalEntriesController < ApplicationController
       page, size = page_params
       search_query = (params['q'] || '').strip.downcase
       
-      # Get ALL items first for global sorting
-      ld = LinkedData::Models::OntoLex::LexicalEntry.goo_attrs_to_load([:all])
-      all_items = LinkedData::Models::OntoLex::LexicalEntry.list_in_submission(submission, 1, 100000, ld)
+      # Load only minimal attributes needed for sorting/filtering
+      minimal_attrs = [:lemma]
+      all_items = LinkedData::Models::OntoLex::LexicalEntry.in(submission).include(*minimal_attrs).all
       
-      # Build a cache of labels to avoid repeated lookups
-      label_cache = {}
-      all_items.each do |item|
-        label_cache[item.id.to_s] = get_entry_label(item, submission).downcase
+      # Build sort/filter data from minimal loaded attributes
+      items_with_labels = all_items.map do |item|
+        label = (item.lemma || item.id.to_s.split('/').last).to_s
+        { id: item.id, label: label, label_lower: label.downcase }
       end
       
-      # Apply search filter if present
       unless search_query.empty?
-        all_items.select! do |item|
-          label_cache[item.id.to_s].include?(search_query)
-        end
+        items_with_labels.select! { |item| item[:label_lower].include?(search_query) }
       end
       
-      # Sort ALL items alphabetically (global sort)
-      all_items.sort_by! { |item| label_cache[item.id.to_s] }
+      items_with_labels.sort_by! { |item| item[:label_lower] }
       
-      # Now apply pagination on sorted results
-      total = all_items.length
+      total = items_with_labels.length
       start_idx = (page - 1) * size
-      items = all_items.slice(start_idx, size) || []
+      page_items = items_with_labels.slice(start_idx, size) || []
+      
+      # Only load full attributes for the paginated items
+      if page_items.any?
+        page_ids = page_items.map { |item| item[:id] }
+        full_ld = LinkedData::Models::OntoLex::LexicalEntry.goo_attrs_to_load([:all])
+        items = LinkedData::Models::OntoLex::LexicalEntry.list_for_ids(submission, page_ids, full_ld)
+        
+        # Preserve sort order from page_items
+        id_to_item = items.index_by { |i| i.id.to_s }
+        items = page_ids.map { |id| id_to_item[id.to_s] }.compact
+      else
+        items = []
+      end
       
       reply page_object(items, total)
     end
 
-    # List senses for a given lexical entry (must be before wildcard show route).
-    # Use a wildcard segment and splat capture so IRIs with slashes are captured fully.
+    # List senses for a given lexical entry
     get '/*/senses' do
       ont, submission = get_ontology_and_submission
       splat = params['splat'] || params[:splat]

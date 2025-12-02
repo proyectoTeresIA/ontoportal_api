@@ -4,8 +4,6 @@ class TerminologicalEntriesController < ApplicationController
 
   namespace "/ontologies/:ontology/terminological_entries" do
 
-    # Optimized list endpoint: Returns lexical entries with their forms' writtenReps
-    # This reduces multiple requests to a single call
     get do
       ont, submission = get_ontology_and_submission
       check_last_modified_segment(LinkedData::Models::OntoLex::LexicalEntry, [ont.acronym])
@@ -13,33 +11,56 @@ class TerminologicalEntriesController < ApplicationController
       page, size = page_params
       search_query = (params['q'] || '').strip.downcase
       
-      # Get ALL entries first for global sorting
-      ld = LinkedData::Models::OntoLex::LexicalEntry.goo_attrs_to_load([:language, :form])
-      all_entries = LinkedData::Models::OntoLex::LexicalEntry.list_in_submission(submission, 1, 100000, ld)
+      # Load entries with form references
+      minimal_attrs = [:form]
+      all_entries = LinkedData::Models::OntoLex::LexicalEntry.in(submission).include(*minimal_attrs).all
       
-      # Enrich all entries with form writtenReps
-      all_enriched = all_entries.map { |entry| enrich_entry(entry, submission) }
+      # Collect ALL form IDs for batch loading
+      all_form_ids = all_entries.flat_map { |e| Array(e.form) }.compact.uniq
       
-      # Apply search filter if present
-      unless search_query.empty?
-        all_enriched.select! do |entry_hash|
-          reps = entry_hash['writtenReps'] || []
-          reps.any? { |rep| rep.to_s.downcase.include?(search_query) }
-        end
+      # Batch load ALL forms with writtenRep in a single query
+      form_reps = {}
+      if all_form_ids.any?
+        forms = LinkedData::Models::OntoLex::Form.in(submission).include(:writtenRep).all
+        forms.each { |f| form_reps[f.id.to_s] = f.writtenRep }
       end
       
-      # Sort ALL items alphabetically (global sort)
-      all_enriched.sort_by! { |e| (e['writtenReps']&.first || e['@id'].to_s.split('/').last).to_s.downcase }
+      # Build sort/filter data using writtenReps from forms
+      items_with_labels = all_entries.map do |entry|
+        form_ids = Array(entry.form)
+        # Get first writtenRep from forms as label
+        label = form_ids.map { |fid| form_reps[fid.to_s] }.compact.first
+        label ||= entry.id.to_s.split('/').last
+        label = label.to_s
+        { id: entry.id, form_ids: form_ids, label: label, label_lower: label.downcase }
+      end
       
-      # Now apply pagination on sorted results
-      total = all_enriched.length
+      unless search_query.empty?
+        items_with_labels.select! { |item| item[:label_lower].include?(search_query) }
+      end
+      
+      # Global sort
+      items_with_labels.sort_by! { |item| item[:label_lower] }
+      
+      # Pagination
+      total = items_with_labels.length
       start_idx = (page - 1) * size
-      enriched_entries = all_enriched.slice(start_idx, size) || []
+      page_items = items_with_labels.slice(start_idx, size) || []
+      
+      # Build enriched entries preserving sort order
+      enriched_entries = page_items.map do |item|
+        reps = item[:form_ids].map { |fid| form_reps[fid.to_s] }.compact
+        {
+          '@id' => item[:id].to_s,
+          'id' => item[:id].to_s,
+          'form' => item[:form_ids].map(&:to_s),
+          'writtenReps' => reps
+        }
+      end
       
       reply page_object(enriched_entries, total)
     end
 
-    # Optimized single entry endpoint: Returns full entry details with all related entities
     get '/*' do
       ont, submission = get_ontology_and_submission
       check_last_modified_segment(LinkedData::Models::OntoLex::LexicalEntry, [ont.acronym])
