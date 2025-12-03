@@ -27,6 +27,23 @@ module Annotator
         if is_ontolex
           logger.info("✓ OntoLex ontology detected! Creating term cache for OntoLex entities...")
           create_ontolex_term_cache(logger, sub, redis, redis_prefix)
+
+          # Regenerate the dictionary after parsing to ensure OntoLex entries become 
+          # available to mgrep immediately instead of waiting for the scheduled job.
+          if redis.nil?
+            begin
+              cron_settings = defined?(::NcboCron) && ::NcboCron.respond_to?(:settings) ? ::NcboCron.settings : nil
+              if cron_settings && cron_settings.respond_to?(:enable_dictionary_generation_cron_job) && cron_settings.enable_dictionary_generation_cron_job
+                logger.info("Regenerating mgrep dictionary after OntoLex cache update (cron job enabled)...")
+                generate_dictionary_file()
+                logger.info("Completed mgrep dictionary regeneration after OntoLex cache update.")
+              else
+                logger.info("Skipping immediate dictionary regeneration (cron job disabled or unavailable).")
+              end
+            rescue Exception => e
+              logger.error("Failed regenerating mgrep dictionary after OntoLex cache update: #{e.message}")
+            end
+          end
         else
           logger.info("✗ Not an OntoLex ontology (language: #{ont_lang&.id}), skipping OntoLex indexing")
         end
