@@ -69,15 +69,7 @@ class LexicalConceptsController < ApplicationController
     private
     def normalize_iri(raw)
       val = raw.to_s
-      2.times do
-        begin
-          decoded = CGI.unescape(val)
-          val = decoded if decoded && decoded != val
-        rescue StandardError
-          break
-        end
-      end
-      val = val.sub(/^(https?):\/(?!\/)/, '\1://')
+      val = val.sub(/^(https?):[\/]+/, '\1://')
       val
     end
 

@@ -181,17 +181,7 @@ class TerminologicalEntriesController < ApplicationController
     
     def normalize_iri(raw)
       val = raw.to_s
-      # decode up to twice
-      2.times do
-        begin
-          decoded = CGI.unescape(val)
-          val = decoded if decoded && decoded != val
-        rescue StandardError
-          break
-        end
-      end
-      # fix scheme having one slash e.g., http:/example → http://example
-      val = val.sub(/^(https?):\/(?!\/)/, '\1://')
+      val = val.sub(/^(https?):[\/]+/, '\1://')
       val
     end
   end

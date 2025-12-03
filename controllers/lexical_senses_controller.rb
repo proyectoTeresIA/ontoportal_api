@@ -10,8 +10,7 @@ class LexicalSensesController < ApplicationController
       page, size = page_params
       search_query = (params['q'] || '').strip.downcase
       
-      # OPTIMIZATION: Load only minimal attributes needed for sorting/filtering
-      # definition is the primary label for senses
+      # Load only minimal attributes needed for sorting/filtering
       minimal_attrs = [:definition]
       all_items = LinkedData::Models::OntoLex::LexicalSense.in(submission).include(*minimal_attrs).all
       
@@ -26,15 +25,15 @@ class LexicalSensesController < ApplicationController
         items_with_labels.select! { |item| item[:label_lower].include?(search_query) }
       end
       
-      # Sort ALL items alphabetically (global sort)
+      # Sort
       items_with_labels.sort_by! { |item| item[:label_lower] }
       
-      # Calculate pagination
+      # Pagination
       total = items_with_labels.length
       start_idx = (page - 1) * size
       page_items = items_with_labels.slice(start_idx, size) || []
       
-      # OPTIMIZATION: Only load full attributes for the paginated items
+      # Only load full attributes for the paginated items
       if page_items.any?
         page_ids = page_items.map { |item| item[:id] }
         items = LinkedData::Models::OntoLex::LexicalSense.list_for_ids(submission, page_ids)
@@ -94,15 +93,7 @@ class LexicalSensesController < ApplicationController
 
     def normalize_iri(raw)
       val = raw.to_s
-      2.times do
-        begin
-          decoded = CGI.unescape(val)
-          val = decoded if decoded && decoded != val
-        rescue StandardError
-          break
-        end
-      end
-      val = val.sub(/^(https?):\/(?!\/)/, '\1://')
+      val = val.sub(/^(https?):[\/]+/, '\1://')
       val
     end
   end
