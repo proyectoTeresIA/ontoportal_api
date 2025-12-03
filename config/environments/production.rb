@@ -114,4 +114,6 @@ NcboCron.config do |config|
   config.property_search_server_index_all_url = 'http://localhost:8983/solr/prop_search_core2'
   config.ontology_report_path = "#{$DATADIR}/reports/ontologies_report.json"
   config.enable_spam_deletion = false
+  config.enable_dictionary_generation_cron_job = true
+  config.cron_dictionary_generation_cron_job = "30 3 * * *"
 end

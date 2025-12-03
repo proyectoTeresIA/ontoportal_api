@@ -24,6 +24,36 @@ APP_ROOT="$(pwd)"
 NCBO_CRON_PATH=$(find /srv/ontoportal/bundle -type f -name ncbo_cron | head -1 || true)
 [[ -n "$NCBO_CRON_PATH" ]] || { echo "ERROR: ncbo_cron executable not found in bundle"; exit 1; }
 
+# ============================================================================
+# ANNOTATOR CACHE INITIALIZATION
+# Ensure annotator cache is populated on startup
+# ============================================================================
+echo "Checking annotator cache status..."
+INIT_SCRIPT=$(cat <<'INITRUBY'
+require 'bundler/setup'
+require './app'
+
+annotator = Annotator::Models::NcboAnnotator.new
+redis = Redis.new(host: Annotator.settings.annotator_redis_host, port: Annotator.settings.annotator_redis_port)
+dict_key = "#{annotator.redis_current_instance}dict"
+dict_size = redis.hlen(dict_key)
+
+puts "Current annotator cache size: #{dict_size} entries"
+
+if dict_size == 0
+  puts "Annotator cache is empty - regenerating..."
+  annotator.create_term_cache(nil, false)
+  annotator.generate_dictionary_file()
+  new_size = redis.hlen(dict_key)
+  puts "Annotator cache regenerated: #{new_size} entries"
+else
+  puts "Annotator cache OK"
+end
+INITRUBY
+)
+echo "$INIT_SCRIPT" | bundle exec ruby || echo "Warning: Annotator cache initialization check failed (non-fatal)"
+# ============================================================================
+
 # Bootstrap Ruby: load bundler, then the app, then the ncbo_cron bin (with gem shim for config)
 cat > /tmp/ncbo_cron_boot.rb <<'RUBY'
 #!/usr/bin/env ruby
