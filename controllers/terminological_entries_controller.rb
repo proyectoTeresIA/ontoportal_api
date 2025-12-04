@@ -112,22 +112,23 @@ class TerminologicalEntriesController < ApplicationController
               rel_senses_ld = LinkedData::Models::OntoLex::LexicalSense.goo_attrs_to_load([:isSenseOf])
               rel_senses = LinkedData::Models::OntoLex::LexicalSense.list_for_ids(submission, rel_sense_ids, rel_senses_ld)
               
-              # For each related sense, load its entry and forms to get writtenReps
+              # For each related sense, load its entry and forms to get writtenReps and language
               sense_hash["loaded_#{rel_type}"] = rel_senses.map do |rel_sense|
                 rel_sense_hash = JSON.parse(rel_sense.to_json)
                 
                 if rel_sense.isSenseOf
                   entry_id = rel_sense.isSenseOf
-                  rel_entry_ld = LinkedData::Models::OntoLex::LexicalEntry.goo_attrs_to_load([:form])
+                  rel_entry_ld = LinkedData::Models::OntoLex::LexicalEntry.goo_attrs_to_load([:form, :language])
                   rel_entry = LinkedData::Models::OntoLex::LexicalEntry.list_for_ids(submission, [entry_id], rel_entry_ld).first
                   
                   if rel_entry && rel_entry.form
                     form_ids = Array(rel_entry.form)
-                    forms_ld = LinkedData::Models::OntoLex::Form.goo_attrs_to_load([:writtenRep])
+                    forms_ld = LinkedData::Models::OntoLex::Form.goo_attrs_to_load([:writtenRep, :language])
                     forms = LinkedData::Models::OntoLex::Form.list_for_ids(submission, form_ids, forms_ld)
                     rel_sense_hash['writtenReps'] = forms.map { |f| f.writtenRep }.compact
-                    rel_sense_hash['entryId'] = entry_id.to_s
                   end
+                  rel_sense_hash['language'] = rel_entry.language.to_s if rel_entry.language
+                  rel_sense_hash['entryId'] = entry_id.to_s
                 end
                 
                 rel_sense_hash

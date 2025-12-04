@@ -8,7 +8,7 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PORTAL_DIR="$(dirname "$SCRIPT_DIR")"
+PORTAL_DIR="$(dirname "$SCRIPT_DIR")/.."
 LOG_PREFIX="[$(date '+%Y-%m-%d %H:%M:%S')]"
 
 # Get API key from .env file

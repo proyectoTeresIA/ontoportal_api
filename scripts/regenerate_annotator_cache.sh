@@ -7,7 +7,7 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PORTAL_DIR="$(dirname "$SCRIPT_DIR")"
+PORTAL_DIR="$(dirname "$SCRIPT_DIR")/.."
 
 # Get API key from argument or .env file
 API_KEY="${1:-}"
