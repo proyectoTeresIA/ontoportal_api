@@ -30,6 +30,18 @@ class LexicalSensesController < ApplicationController
       
       # Pagination
       total = items_with_labels.length
+      
+      # If find_id parameter is provided, calculate which page contains that item
+      find_id = params['find_id']
+      if find_id && !find_id.empty?
+        find_id = normalize_iri(find_id)
+        item_index = items_with_labels.find_index { |item| item[:id].to_s == find_id }
+        if item_index
+          page = (item_index / size) + 1
+          params['page'] = page.to_s
+        end
+      end
+      
       start_idx = (page - 1) * size
       page_items = items_with_labels.slice(start_idx, size) || []
       

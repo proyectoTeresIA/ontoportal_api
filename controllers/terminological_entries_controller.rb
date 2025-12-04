@@ -44,6 +44,18 @@ class TerminologicalEntriesController < ApplicationController
       
       # Pagination
       total = items_with_labels.length
+      
+      # If find_id parameter is provided, calculate which page contains that item
+      find_id = params['find_id']
+      if find_id && !find_id.empty?
+        find_id = normalize_iri(find_id)
+        item_index = items_with_labels.find_index { |item| item[:id].to_s == find_id }
+        if item_index
+          page = (item_index / size) + 1
+          params['page'] = page.to_s
+        end
+      end
+      
       start_idx = (page - 1) * size
       page_items = items_with_labels.slice(start_idx, size) || []
       
@@ -123,7 +135,7 @@ class TerminologicalEntriesController < ApplicationController
                   
                   if rel_entry && rel_entry.form
                     form_ids = Array(rel_entry.form)
-                    forms_ld = LinkedData::Models::OntoLex::Form.goo_attrs_to_load([:writtenRep, :language])
+                    forms_ld = LinkedData::Models::OntoLex::Form.goo_attrs_to_load([:writtenRep])
                     forms = LinkedData::Models::OntoLex::Form.list_for_ids(submission, form_ids, forms_ld)
                     rel_sense_hash['writtenReps'] = forms.map { |f| f.writtenRep }.compact
                   end
