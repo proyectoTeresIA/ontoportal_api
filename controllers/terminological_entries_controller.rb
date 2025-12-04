@@ -11,8 +11,8 @@ class TerminologicalEntriesController < ApplicationController
       page, size = page_params
       search_query = (params['q'] || '').strip.downcase
       
-      # Load entries with form references
-      minimal_attrs = [:form]
+      # Load entries with form references and language
+      minimal_attrs = [:form, :language]
       all_entries = LinkedData::Models::OntoLex::LexicalEntry.in(submission).include(*minimal_attrs).all
       
       # Collect ALL form IDs for batch loading
@@ -32,7 +32,8 @@ class TerminologicalEntriesController < ApplicationController
         label = form_ids.map { |fid| form_reps[fid.to_s] }.compact.first
         label ||= entry.id.to_s.split('/').last
         label = label.to_s
-        { id: entry.id, form_ids: form_ids, label: label, label_lower: label.downcase }
+        language = entry.language ? entry.language.to_s : nil
+        { id: entry.id, form_ids: form_ids, label: label, label_lower: label.downcase, language: language }
       end
       
       unless search_query.empty?
@@ -62,12 +63,14 @@ class TerminologicalEntriesController < ApplicationController
       # Build enriched entries preserving sort order
       enriched_entries = page_items.map do |item|
         reps = item[:form_ids].map { |fid| form_reps[fid.to_s] }.compact
-        {
+        entry_hash = {
           '@id' => item[:id].to_s,
           'id' => item[:id].to_s,
           'form' => item[:form_ids].map(&:to_s),
           'writtenReps' => reps
         }
+        entry_hash['language'] = item[:language] if item[:language]
+        entry_hash
       end
       
       reply page_object(enriched_entries, total)
