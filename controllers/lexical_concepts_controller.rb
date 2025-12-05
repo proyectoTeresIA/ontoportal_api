@@ -1,5 +1,6 @@
 require 'cgi'
 class LexicalConceptsController < ApplicationController
+  helpers OntolexSearchHelper
 
   namespace "/ontologies/:ontology/lexical_concepts" do
 
@@ -20,11 +21,8 @@ class LexicalConceptsController < ApplicationController
         { id: item.id, label: label, label_lower: label.downcase }
       end
       
-      unless search_query.empty?
-        items_with_labels.select! { |item| item[:label_lower].include?(search_query) }
-      end
-      
-      items_with_labels.sort_by! { |item| item[:label_lower] }
+      # Filter and sort by relevance (prefix matches first, then position-based)
+      items_with_labels = filter_and_sort_by_relevance(items_with_labels, search_query)
       
       total = items_with_labels.length
       

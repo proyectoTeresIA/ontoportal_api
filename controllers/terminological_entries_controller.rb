@@ -1,6 +1,7 @@
 require 'cgi'
 
 class TerminologicalEntriesController < ApplicationController
+  helpers OntolexSearchHelper
 
   namespace "/ontologies/:ontology/terminological_entries" do
 
@@ -36,12 +37,8 @@ class TerminologicalEntriesController < ApplicationController
         { id: entry.id, form_ids: form_ids, label: label, label_lower: label.downcase, language: language }
       end
       
-      unless search_query.empty?
-        items_with_labels.select! { |item| item[:label_lower].include?(search_query) }
-      end
-      
-      # Global sort
-      items_with_labels.sort_by! { |item| item[:label_lower] }
+      # Filter and sort by relevance (prefix matches first, then position-based)
+      items_with_labels = filter_and_sort_by_relevance(items_with_labels, search_query)
       
       # Pagination
       total = items_with_labels.length

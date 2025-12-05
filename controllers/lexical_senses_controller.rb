@@ -1,6 +1,8 @@
 require "cgi"
 
 class LexicalSensesController < ApplicationController
+  helpers OntolexSearchHelper
+
   namespace "/ontologies/:ontology/lexical_senses" do
     get do
       includes_param_check(LinkedData::Models::OntoLex::LexicalSense)
@@ -20,13 +22,8 @@ class LexicalSensesController < ApplicationController
         { id: item.id, label: label, label_lower: label.downcase }
       end
       
-      # Apply search filter if present
-      unless search_query.empty?
-        items_with_labels.select! { |item| item[:label_lower].include?(search_query) }
-      end
-      
-      # Sort
-      items_with_labels.sort_by! { |item| item[:label_lower] }
+      # Filter and sort by relevance (prefix matches first, then position-based)
+      items_with_labels = filter_and_sort_by_relevance(items_with_labels, search_query)
       
       # Pagination
       total = items_with_labels.length
