@@ -85,13 +85,15 @@ class UsersController < ApplicationController
       reply user
     end
 
-    # Create user
+    # Create user (admin only)
     post do
+      error 403, "Access denied: only administrators can create users" unless current_user && current_user.admin?
       create_user
     end
 
-    # Users get created via put because clients can assign an id (POST is only used where servers assign ids)
+    # Users get created via put because clients can assign an id (POST is only used where servers assign ids) - admin only
     put '/:username' do
+      error 403, "Access denied: only administrators can create users" unless current_user && current_user.admin?
       create_user
     end
 
