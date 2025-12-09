@@ -109,7 +109,7 @@ NcboCron.config do |config|
   # Processing intervals - check every minute
   config.minutes_between = 1
 
-  config.enable_ontology_analytics = false
+  config.enable_ontology_analytics = true
   config.search_index_all_url = 'http://localhost:8983/solr/term_search_core2'
   config.property_search_server_index_all_url = 'http://localhost:8983/solr/prop_search_core2'
   config.ontology_report_path = "#{$DATADIR}/reports/ontologies_report.json"
