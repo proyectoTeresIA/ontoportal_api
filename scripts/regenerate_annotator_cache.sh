@@ -39,30 +39,31 @@ echo "   Dictionary entries: $DICT_SIZE"
 
 # Regenerate the cache
 echo ""
-echo "2. Regenerating annotator term cache..."
-CACHE_RESPONSE=$(docker compose -f docker-compose.production.yml --profile agraph exec -T api-agraph \
-    curl -s -X POST "http://localhost:9393/annotator/cache" \
-    -H "Authorization: apikey token=$API_KEY" \
-    -w "%{http_code}")
-
-HTTP_CODE="${CACHE_RESPONSE: -3}"
-if [ "$HTTP_CODE" != "200" ]; then
-    echo "   ERROR: Cache regeneration failed with HTTP $HTTP_CODE"
+echo "2. Regenerating annotator term cache directly via Ruby..."
+docker compose -f docker-compose.production.yml --profile agraph exec -T api-agraph bash -lc \
+    "cd /srv/ontoportal/ontologies_api && bundle exec ruby -e '
+        require \"./app\"
+        Thread.current[:user] = LinkedData::Models::User.find(\"admin\").first
+        annotator = Annotator::Models::NcboAnnotator.new
+        annotator.create_term_cache(nil, false)
+    '"
+if [ $? -ne 0 ]; then
+    echo "   ERROR: Cache regeneration failed"
     exit 1
 fi
 echo "   Cache regenerated successfully"
 
 # Generate dictionary file
 echo ""
-echo "3. Generating dictionary file..."
-DICT_RESPONSE=$(docker compose -f docker-compose.production.yml --profile agraph exec -T api-agraph \
-    curl -s -X POST "http://localhost:9393/annotator/dictionary" \
-    -H "Authorization: apikey token=$API_KEY" \
-    -w "%{http_code}")
-
-HTTP_CODE="${DICT_RESPONSE: -3}"
-if [ "$HTTP_CODE" != "200" ]; then
-    echo "   ERROR: Dictionary generation failed with HTTP $HTTP_CODE"
+echo "3. Generating dictionary file directly via Ruby..."
+docker compose -f docker-compose.production.yml --profile agraph exec -T api-agraph bash -lc \
+    "cd /srv/ontoportal/ontologies_api && bundle exec ruby -e '
+        require \"./app\"
+        annotator = Annotator::Models::NcboAnnotator.new
+        annotator.generate_dictionary_file()
+    '"
+if [ $? -ne 0 ]; then
+    echo "   ERROR: Dictionary generation failed"
     exit 1
 fi
 echo "   Dictionary file generated"
