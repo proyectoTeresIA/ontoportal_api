@@ -18,19 +18,28 @@ class SearchController < ApplicationController
       params ||= @params
       text = params["q"]
 
-      # Unified search endpoint: support classes (default) and OntoLex via resource_type
-      resource_type = (params['resource_type'] || params['type'] || 'class').to_s
-      case resource_type
-      when 'class', 'classes'
-        return process_class_search(params, text)
-      when 'form', 'forms', 'lexical'
-        return process_lexical_search(params, text)
-      else
-        error 400, "Unsupported resource_type '#{resource_type}'. Use 'class' or 'form'."
+      # Si el usuario pide explícitamente un tipo, respetarlo
+      if params['resource_type'] || params['type']
+        resource_type = (params['resource_type'] || params['type']).to_s
+
+        case resource_type
+        when 'class', 'classes'
+          return process_class_search(params, text)
+        when 'form', 'forms', 'lexical'
+          return process_lexical_search(params, text)
+        end
       end
+
+      # COMPORTAMIENTO POR DEFECTO → fusión
+      class_results = process_class_search(params, text, internal: true)
+      lexical_results = process_lexical_search(params, text, internal: true)
+
+      merged = merge_results(class_results, lexical_results)
+
+      reply 200, merged
     end
 
-    def process_class_search(params, text)
+    def process_class_search(params, text, internal: false)
       # existing class search path
       query = get_term_search_query(text, params)
       set_page_params(params)
@@ -77,12 +86,14 @@ class SearchController < ApplicationController
       #need to return a Page object
       page = page_object(docs, total_found)
 
+      #reply 200, page
+      return page if internal
       reply 200, page
     end
 
     # OntoLex lexical entry search with full Solr support
     # Supports language filtering, subject/domain filtering, and all standard search features
-    def process_lexical_search(params, text)
+    def process_lexical_search(params, text, internal: false)
       set_page_params(params)
 
       # Try Solr first if available
@@ -132,7 +143,9 @@ class SearchController < ApplicationController
         end
         
         page = page_object(docs, total_found)
-        return reply 200, page
+        #return reply 200, page
+        return page if internal
+        reply 200, page
       end
 
       # Fallback: require a single ontology scope for performance and perform a simple substring match on forms
@@ -168,7 +181,43 @@ class SearchController < ApplicationController
       end
 
       page_obj = page_object(forms, forms.length)
+      #reply 200, page_obj
+      return page_obj if internal
       reply 200, page_obj
+    end
+
+    def extract_collection(results)
+      return [] if results.nil?
+
+      # Caso 1: ya es un array de resultados
+      return results if results.is_a?(Array)
+
+      # Caso 2: es un hash tipo API
+      if results.is_a?(Hash)
+        return results["collection"] || results[:collection] || []
+      end
+
+      # Caso 3: objeto tipo Goo::Base::Page
+      if results.respond_to?(:collection)
+        return results.collection
+      end
+
+      []
+
+    end
+
+    def merge_results(class_results, lexical_results)
+      class_docs = extract_collection(class_results)
+      lexical_docs = extract_collection(lexical_results)
+
+      all_docs = class_docs + lexical_docs
+
+      sorted = all_docs.sort_by { |d| -(d["score"] || 0) }
+
+      {
+        "collection" => sorted,
+        "totalCount" => sorted.size
+      }
     end
 
   end

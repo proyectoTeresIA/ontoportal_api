@@ -111,6 +111,20 @@ module Sinatra
         # Add filter query if not empty
         params["fq"] = filter_query unless filter_query.empty?
 
+        # FIX: eliminar boosts heredados incompatibles
+        params.delete("bq") if params["bq"] 
+
+        # FIX: eliminar filtros incompatibles con OntoLex
+        if params["fq"]
+          clauses = params["fq"].split(" AND ")
+
+          clauses.reject! do |c|
+            c.include?("obsolete") || c.include?("provisional")
+          end
+
+          params["fq"] = clauses.join(" AND ")
+        end
+
         query
       end
     end
