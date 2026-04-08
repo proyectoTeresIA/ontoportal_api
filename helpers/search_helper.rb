@@ -105,12 +105,12 @@ module Sinatra
         # text.gsub!(/\*+$/, '')
 
         if params[EXACT_MATCH_PARAM] == "true"
-          query = "\"#{solr_escape(text)}\""
+          query = accent_insensitive_solr_query(text, quoted: true)
           params["qf"] = "resource_id^20 notation^20 oboId^20 prefLabelExact#{lang_suffix}^10 synonymExact#{lang_suffix} #{QUERYLESS_FIELDS_STR_NO_IDS}"
           params["hl.fl"] = "resource_id prefLabelExact#{lang_suffix} synonymExact#{lang_suffix} #{QUERYLESS_FIELDS_STR}"
         elsif params[SUGGEST_PARAM] == "true" || text[-1] == '*'
           text.gsub!(/\*+$/, '')
-          query = "\"#{solr_escape(text)}\""
+          query = accent_insensitive_solr_query(text, quoted: true)
           params["qt"] = "/suggest_ncbo"
           params["qf"] = " prefLabelExact#{lang_suffix}^100 prefLabelSuggestEdge#{lang_suffix}^50 synonymSuggestEdge#{lang_suffix}^10 prefLabelSuggestNgram#{lang_suffix} synonymSuggestNgram#{lang_suffix} resource_id #{QUERYLESS_FIELDS_STR}"
           params["pf"] = "prefLabelSuggest#{lang_suffix}^50"
@@ -119,7 +119,7 @@ module Sinatra
           if text.strip.empty?
             query = '*'
           else
-            query = solr_escape(text)
+            query = accent_insensitive_solr_query(text)
           end
           params["qf"] = "resource_id^100 notation^100 oboId^100 prefLabelExact#{lang_suffix}^90 prefLabel#{lang_suffix}^70 synonymExact#{lang_suffix}^50 synonym#{lang_suffix}^10 #{QUERYLESS_FIELDS_STR_NO_IDS}"
           params["qf"] << " property" if params[INCLUDE_PROPERTIES_PARAM] == "true"
@@ -235,6 +235,26 @@ module Sinatra
       #
       def solr_escape(text)
         RSolr.solr_escape(text).gsub(/\s+/,"\\ ")
+      end
+
+      def remove_accents(text)
+        text.to_s.unicode_normalize(:nfkd).gsub(/\p{Mn}/, "")
+      end
+
+      def accent_insensitive_solr_query(text, quoted: false)
+        escaped_original = solr_escape(text)
+        folded = remove_accents(text)
+        escaped_folded = solr_escape(folded)
+
+        if escaped_original == escaped_folded
+          return quoted ? "\"#{escaped_original}\"" : escaped_original
+        end
+
+        if quoted
+          "(\"#{escaped_original}\" OR \"#{escaped_folded}\")"
+        else
+          "(#{escaped_original} OR #{escaped_folded})"
+        end
       end
 
       def get_valueset_root_ids(onts, params)

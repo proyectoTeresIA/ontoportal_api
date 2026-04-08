@@ -34,13 +34,13 @@ module Sinatra
 
         # Build query based on exact match or regular search
         if params[Sinatra::Helpers::SearchHelper::EXACT_MATCH_PARAM] == "true"
-          query = "\"#{solr_escape(text)}\""
+          query = accent_insensitive_solr_query(text, quoted: true)
           params["qf"] = "writtenRepExact^100 lemmaExact^90 resource_id^20"
           params["hl.fl"] = "writtenRepExact lemmaExact resource_id"
         elsif params[Sinatra::Helpers::SearchHelper::SUGGEST_PARAM] == "true" || (!text.empty? && text[-1] == '*')
           # Autocomplete/suggest mode
           text.gsub!(/\*+$/, '')
-          query = "\"#{solr_escape(text)}\""
+          query = accent_insensitive_solr_query(text, quoted: true)
           params["qt"] = "/suggest_ncbo"
           params["qf"] = "writtenRepExact^100 writtenRepSuggestEdge^80 lemmaSuggestEdge^70 writtenRepSuggestNgram^30 lemmaSuggestNgram^20"
           params["pf"] = "writtenRepExact^50 lemmaExact^40"
@@ -55,7 +55,7 @@ module Sinatra
             unless search_text.include?('*') || search_text.start_with?('"')
               search_text = "*#{search_text}*"
             end
-            query = solr_escape(search_text)
+            query = accent_insensitive_solr_query(search_text)
           end
           # Prioritize text_general fields (with ASCII folding) over Exact fields
           params["qf"] = "writtenRep^100 lemma^90 writtenRepExact^80 lemmaExact^70 conceptLabel^30 definition^20 subjectLabel^25 resource_id^50"

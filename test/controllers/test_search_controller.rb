@@ -461,6 +461,11 @@ class TestSearchController < TestCase
     refute_equal 0, res["totalCount"]
     refute_nil res["collection"].select{|doc| doc["@id"].eql?('http://bioontology.org/ontologies/Activity.owl#Activity')}.first
 
+    get "/search?q=Activite&ontologies=BROSEARCHTEST-0&lang=fr"
+    res =  MultiJson.load(last_response.body)
+    refute_equal 0, res["totalCount"]
+    refute_nil res["collection"].select{|doc| doc["@id"].eql?('http://bioontology.org/ontologies/Activity.owl#Activity')}.first
+
     get "/search?q=ActivityEnglish&ontologies=BROSEARCHTEST-0&lang=en"
     res =  MultiJson.load(last_response.body)
     refute_equal 0, res["totalCount"]
