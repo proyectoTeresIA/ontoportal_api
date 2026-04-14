@@ -82,7 +82,7 @@ GIT
 
 GIT
   remote: https://github.com/proyectoTeresIA/ontologies_linked_data.git
-  revision: 193f1c4d44ed2ce0e2feb2fd8b65ced429d4660f
+  revision: b5db78c27b7830860ffb4f82a35ac66a1e786dec
   branch: master
   specs:
     ontologies_linked_data (0.0.1)
@@ -109,17 +109,17 @@ GEM
       i18n (>= 0.7, < 2)
       minitest (~> 5.1)
       tzinfo (~> 1.1)
-    addressable (2.8.8)
+    addressable (2.9.0)
       public_suffix (>= 2.0.2, < 8.0)
     airbrussh (1.6.0)
       sshkit (>= 1.6.1, != 1.7.0)
     ast (2.4.3)
     backports (3.25.2)
     base64 (0.3.0)
-    bcrypt (3.1.20)
+    bcrypt (3.1.22)
     bcrypt_pbkdf (1.1.1)
     bcrypt_pbkdf (1.1.1-arm64-darwin)
-    bigdecimal (3.3.1)
+    bigdecimal (4.1.1)
     builder (3.3.0)
     capistrano (3.19.2)
       airbrussh (>= 1.0.0)
@@ -134,20 +134,20 @@ GEM
       capistrano (~> 3.1)
       sshkit (~> 1.3)
     coderay (1.1.3)
-    concurrent-ruby (1.3.5)
+    concurrent-ruby (1.3.6)
     connection_pool (2.5.5)
     crack (0.4.5)
       rexml
     cube-ruby (0.0.3)
     dante (0.2.0)
-    date (3.5.0)
+    date (3.5.1)
     docile (1.4.1)
     domain_name (0.6.20240107)
     ebnf (0.3.5)
       rdf
       sxp
     ed25519 (1.4.0)
-    faraday (2.14.0)
+    faraday (2.14.1)
       faraday-net_http (>= 2.0, < 3.5)
       json
       logger
@@ -217,11 +217,12 @@ GEM
       tilt
     hashdiff (1.2.1)
     http-accept (1.7.0)
-    http-cookie (1.1.0)
+    http-cookie (1.1.4)
       domain_name (~> 0.5)
-    i18n (1.14.7)
+    i18n (1.14.8)
       concurrent-ruby (~> 1.0)
-    json (2.16.0)
+    io-console (0.8.2)
+    json (2.19.3)
     json-schema (2.8.1)
       addressable (>= 2.4)
     json_pure (2.8.1)
@@ -229,7 +230,7 @@ GEM
       base64
     kgio (2.11.4)
     language_server-protocol (3.17.0.5)
-    libxml-ruby (5.0.5)
+    libxml-ruby (5.0.6)
     lint_roller (1.1.0)
     logger (1.7.0)
     macaddr (1.7.2)
@@ -244,22 +245,22 @@ GEM
     mime-types (3.7.0)
       logger
       mime-types-data (~> 3.2025, >= 3.2025.0507)
-    mime-types-data (3.2025.0924)
+    mime-types-data (3.2026.0407)
     mini_mime (1.1.5)
-    minitest (5.26.2)
+    minitest (5.27.0)
     minitest-hooks (1.5.2)
       minitest (> 5.3)
     minitest-stub_any_instance (1.0.3)
     mlanett-redis-lock (0.2.7)
       redis
-    multi_json (1.17.0)
+    multi_json (1.19.1)
     net-ftp (0.3.9)
       net-protocol
       time
-    net-http (0.8.0)
+    net-http (0.9.1)
       uri (>= 0.11.1)
     net-http-persistent (2.9.4)
-    net-imap (0.5.12)
+    net-imap (0.5.13)
       date
       net-protocol
     net-pop (0.1.2)
@@ -275,7 +276,7 @@ GEM
     net-ssh (7.3.0)
     netrc (0.11.0)
     newrelic_rpm (9.23.0)
-    oj (3.16.12)
+    oj (3.16.17)
       bigdecimal (>= 3.0)
       ostruct (>= 0.2)
     omni_logger (0.1.4)
@@ -290,9 +291,10 @@ GEM
     pony (1.13.1)
       mail (>= 2.0)
     prism (1.6.0)
-    pry (0.15.2)
+    pry (0.16.0)
       coderay (~> 1.1)
       method_source (~> 1.0)
+      reline (>= 0.6.0)
     public_suffix (6.0.2)
     racc (1.8.1)
     rack (1.6.13)
@@ -322,7 +324,7 @@ GEM
     redcarpet (3.6.1)
     redis (5.4.1)
       redis-client (>= 0.22.0)
-    redis-client (0.26.1)
+    redis-client (0.28.0)
       connection_pool
     redis-rack-cache (2.2.1)
       rack-cache (>= 1.10, < 2)
@@ -330,6 +332,8 @@ GEM
     redis-store (1.11.0)
       redis (>= 4, < 6)
     regexp_parser (2.11.3)
+    reline (0.6.3)
+      io-console (~> 0.5)
     request_store (1.7.0)
       rack (>= 1.4)
     rest-client (2.1.0)
@@ -401,9 +405,9 @@ GEM
     temple (0.10.4)
     thread_safe (0.3.6)
     tilt (2.6.1)
-    time (0.4.1)
+    time (0.4.2)
       date
-    timeout (0.4.4)
+    timeout (0.6.1)
     tzinfo (1.2.11)
       thread_safe (~> 0.1)
     unicode-display_width (3.2.0)

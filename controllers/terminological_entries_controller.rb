@@ -157,7 +157,14 @@ class TerminologicalEntriesController < ApplicationController
         concept_id = entry.evokes
         concept_ld = LinkedData::Models::OntoLex::LexicalConcept.goo_attrs_to_load([:all])
         concept = LinkedData::Models::OntoLex::LexicalConcept.list_for_ids(submission, [concept_id], concept_ld).first
-        entry_hash['loadedConcept'] = JSON.parse(concept.to_json) if concept
+        if concept
+          concept_hash = JSON.parse(concept.to_json)
+          concept_hash['inScheme'] = expand_in_scheme_values(concept_hash['inScheme'], submission)
+          entry_hash['loadedConcept'] = concept_hash
+
+          source_summary = extract_source_summary_from_concept(concept_hash)
+          entry_hash['sourceResource'] = source_summary if source_summary
+        end
       end
       
       reply entry_hash
@@ -196,6 +203,69 @@ class TerminologicalEntriesController < ApplicationController
       val = raw.to_s
       val = val.sub(/^(https?):[\/]+/, '\1://')
       val
+    end
+
+    def expand_in_scheme_values(in_scheme_values, submission)
+      normalize_to_array(in_scheme_values).map do |scheme|
+        scheme_uri = extract_uri_value(scheme)
+        next scheme unless scheme_uri && !scheme_uri.empty?
+
+        LinkedData::Models::OntoLex::LexicalConcept.expand_in_scheme_for_concept(scheme_uri, submission)
+      rescue StandardError
+        scheme
+      end.compact
+    end
+
+    def extract_uri_value(value)
+      return nil if value.nil?
+      return value.to_s if value.is_a?(String)
+      return value.id.to_s if value.respond_to?(:id) && value.id
+
+      if value.is_a?(Array)
+        return value[1].to_s if value.length == 2 && value[0].to_s == 'uri'
+        return extract_uri_value(value.first)
+      end
+
+      if value.is_a?(Hash)
+        return value['@id'] if value['@id']
+        return value['id'] if value['id']
+        return value['uri'] if value['uri']
+      end
+
+      value.respond_to?(:to_s) ? value.to_s : nil
+    end
+
+    def normalize_to_array(value)
+      return [] if value.nil?
+      return value if value.is_a?(Array)
+
+      [value]
+    end
+
+    def extract_source_summary_from_concept(concept_hash)
+      return nil unless concept_hash.is_a?(Hash)
+
+      in_schemes = Array(concept_hash['inScheme'])
+      source_obj = in_schemes.map do |scheme|
+        scheme.is_a?(Hash) ? scheme['source'] : nil
+      end.compact.first
+
+      return nil unless source_obj
+
+      if source_obj.is_a?(Hash)
+        summary = {
+          '@id' => source_obj['@id'] || source_obj['id']
+        }
+        summary['resourceName'] = source_obj['resourceName'] if source_obj['resourceName']
+        summary['url'] = source_obj['url'] if source_obj['url']
+        summary['uri'] = source_obj['uri'] if source_obj['uri']
+        summary['resourceCreator'] = source_obj['resourceCreator'] if source_obj['resourceCreator']
+        summary['language'] = source_obj['language'] if source_obj['language']
+        summary['domain'] = source_obj['domain'] if source_obj['domain']
+        return summary
+      end
+
+      { '@id' => source_obj.to_s }
     end
   end
 end
