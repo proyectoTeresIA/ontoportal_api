@@ -82,7 +82,7 @@ GIT
 
 GIT
   remote: https://github.com/proyectoTeresIA/ontologies_linked_data.git
-  revision: 224fe214c7bc7d774815edb4eb9aece63eb148d6
+  revision: eec91a02e85dad9b1281d49c30573bbe2573b184
   branch: master
   specs:
     ontologies_linked_data (0.0.1)
@@ -245,7 +245,7 @@ GEM
     mime-types (3.7.0)
       logger
       mime-types-data (~> 3.2025, >= 3.2025.0507)
-    mime-types-data (3.2026.0407)
+    mime-types-data (3.2026.0414)
     mini_mime (1.1.5)
     minitest (5.27.0)
     minitest-hooks (1.5.2)

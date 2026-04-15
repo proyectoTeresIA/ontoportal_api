@@ -60,14 +60,14 @@ LinkedData.config do |config|
   config.purl_target_url_prefix        = "http://example.org"
 
   # Email notifications
-  config.enable_notifications          = true
+  config.enable_notifications          = ENV.fetch('ENABLE_NOTIFICATIONS', 'false').to_s.casecmp('true').zero?
   config.email_sender                  = "notifications@test.com" # Default sender for emails
-  config.email_override                = "notifications@test.com" # all email gets sent here. Disable with email_override_disable.
-  config.email_disable_override        = true
-  config.smtp_host                     = "smtp.lirmm.fr"
-  config.smtp_port                     = 25
+  config.email_override                = ENV.fetch('EMAIL_OVERRIDE', 'notifications@test.com') # all email gets sent here. Disable with email_override_disable.
+  config.email_disable_override        = ENV.fetch('EMAIL_DISABLE_OVERRIDE', 'true').to_s.casecmp('true').zero?
+  config.smtp_host                     = ENV.fetch('SMTP_HOST', '')
+  config.smtp_port                     = ENV.fetch('SMTP_PORT', '25').to_i
   config.smtp_auth_type                = :none # :none, :plain, :login, :cram_md5
-  config.smtp_domain                   = "lirmm.fr"
+  config.smtp_domain                   = ENV.fetch('SMTP_DOMAIN', 'localhost')
   # Emails of the instance administrators to get mail notifications when new user or new ontology
   config.admin_emails                  = []
 
