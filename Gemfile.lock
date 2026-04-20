@@ -82,7 +82,7 @@ GIT
 
 GIT
   remote: https://github.com/proyectoTeresIA/ontologies_linked_data.git
-  revision: 86f1dbb9e066ac160fda87a5d75d5354ada97481
+  revision: f45b962e7369886eccc71efc0e31cf72f31d1845
   branch: master
   specs:
     ontologies_linked_data (0.0.1)
