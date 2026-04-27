@@ -89,6 +89,15 @@ class SearchController < ApplicationController
       if LinkedData::Models::OntoLex::Form.respond_to?(:search)
         # Build lexical-specific query
         query = get_lexical_search_query(text, params)
+        # Apply default ontology access/existence filtering (same behavior as class search).
+        # This prevents stale lexical index documents from deleted ontologies from leaking.
+        allowed_acronyms = restricted_ontologies_to_acronyms(params)
+        allowed_filter = get_quoted_field_query_param(allowed_acronyms, "OR", "submissionAcronym")
+        if params["fq"].nil? || params["fq"].empty?
+          params["fq"] = allowed_filter
+        else
+          params["fq"] = "(#{params["fq"]}) AND #{allowed_filter}"
+        end
         # puts "Lexical search query: #{query}, params: #{params}"
         
         resp = LinkedData::Models::OntoLex::Form.search(query, params)

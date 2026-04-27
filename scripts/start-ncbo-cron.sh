@@ -54,6 +54,92 @@ INITRUBY
 echo "$INIT_SCRIPT" | bundle exec ruby || echo "Warning: Annotator cache initialization check failed (non-fatal)"
 # ============================================================================
 
+# ============================================================================
+# UPLOADED SUBMISSION WATCHDOG
+# Re-queue stale UPLOADED submissions to prevent permanent stuck states
+# when enqueueing is missed by transient failures.
+# ============================================================================
+REQUEUE_MIN_AGE_MINUTES="${REQUEUE_MIN_AGE_MINUTES:-60}"
+REQUEUE_INTERVAL_SECONDS="${REQUEUE_INTERVAL_SECONDS:-300}"
+ENABLE_UPLOADED_REQUEUE_WATCHDOG="${ENABLE_UPLOADED_REQUEUE_WATCHDOG:-true}"
+
+REQUEUE_SCRIPT=$(cat <<'REQUEUERUBY'
+require 'bundler/setup'
+require './app'
+require 'time'
+
+min_age = Integer(ENV.fetch('REQUEUE_MIN_AGE_MINUTES', '60')) rescue 60
+threshold = Time.now - (min_age * 60)
+parser = NcboCron::Models::OntologySubmissionParser.new
+
+subs = begin
+  uploaded = LinkedData::Models::SubmissionStatus.find('UPLOADED').first
+  LinkedData::Models::OntologySubmission.where(submissionStatus: uploaded)
+    .include(:submissionId, :creationDate, ontology: [:acronym])
+    .all
+rescue StandardError
+  LinkedData::Models::OntologySubmission.where
+    .include(:submissionStatus, :submissionId, :creationDate, ontology: [:acronym])
+    .all
+end
+
+requeued = 0
+checked = 0
+
+subs.each do |sub|
+  checked += 1
+
+  sub.bring(:submissionStatus) if sub.bring?(:submissionStatus)
+  status_codes = (sub.submissionStatus || []).map do |st|
+    st.bring(:code) if st.bring?(:code)
+    st.code
+  end.compact
+
+  next unless status_codes.include?('UPLOADED')
+
+  sub.bring(:creationDate) if sub.bring?(:creationDate)
+  created_at = begin
+    sub.creationDate ? Time.parse(sub.creationDate.to_s) : nil
+  rescue StandardError
+    nil
+  end
+
+  next if created_at && created_at > threshold
+
+  parser.queue_submission(sub, { all: true })
+  sub.bring(:submissionId) if sub.bring?(:submissionId)
+  sub.bring(:ontology) if sub.bring?(:ontology)
+  sub.ontology.bring(:acronym) if sub.ontology && sub.ontology.bring?(:acronym)
+
+  puts "Requeued stale UPLOADED submission #{sub.id} (#{sub.ontology&.acronym}, submissionId=#{sub.submissionId})"
+  requeued += 1
+end
+
+puts "Uploaded requeue watchdog checked #{checked} submissions; requeued #{requeued}."
+REQUEUERUBY
+)
+
+run_uploaded_requeue_once() {
+  echo "$REQUEUE_SCRIPT" | REQUEUE_MIN_AGE_MINUTES="$REQUEUE_MIN_AGE_MINUTES" bundle exec ruby || \
+    echo "Warning: uploaded submission watchdog pass failed (non-fatal)"
+}
+
+echo "Running UPLOADED submission watchdog (startup pass)..."
+run_uploaded_requeue_once
+
+if [[ "$ENABLE_UPLOADED_REQUEUE_WATCHDOG" == "true" ]]; then
+  echo "Starting UPLOADED submission watchdog loop every ${REQUEUE_INTERVAL_SECONDS}s (min age ${REQUEUE_MIN_AGE_MINUTES}m)."
+  (
+    while true; do
+      sleep "$REQUEUE_INTERVAL_SECONDS"
+      run_uploaded_requeue_once
+    done
+  ) &
+else
+  echo "UPLOADED submission watchdog loop disabled by ENABLE_UPLOADED_REQUEUE_WATCHDOG=${ENABLE_UPLOADED_REQUEUE_WATCHDOG}."
+fi
+# ============================================================================
+
 # Bootstrap Ruby: load bundler, then the app, then the ncbo_cron bin (with gem shim for config)
 cat > /tmp/ncbo_cron_boot.rb <<'RUBY'
 #!/usr/bin/env ruby

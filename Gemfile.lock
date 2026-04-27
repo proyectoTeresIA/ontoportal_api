@@ -82,7 +82,7 @@ GIT
 
 GIT
   remote: https://github.com/proyectoTeresIA/ontologies_linked_data.git
-  revision: 77c811fda154bc7d930c8270686047bbd32ac1f3
+  revision: 100f5944cfe8e99fd6df99eb3c65babfc600a10b
   branch: master
   specs:
     ontologies_linked_data (0.0.1)
@@ -260,7 +260,7 @@ GEM
     net-http (0.9.1)
       uri (>= 0.11.1)
     net-http-persistent (2.9.4)
-    net-imap (0.5.13)
+    net-imap (0.5.14)
       date
       net-protocol
     net-pop (0.1.2)
