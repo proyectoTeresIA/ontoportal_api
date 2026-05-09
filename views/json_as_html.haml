@@ -5,8 +5,8 @@
     %meta{"http-equiv".to_sym => "X-UA-Compatible", content: "IE=Edge"}
 
     - # Provide a nice-looking view for browsers
-    %link{rel: "stylesheet", href: "/static/jsonview/jsonview.css", type: "text/css", media: "screen", charset: "utf-8"}
-    %script{src: "/static/jsonview/jsonview.js", type: "text/javascript"}
+    %link{rel: "stylesheet", href: "#{ENV['BASE_PATH']}/static/jsonview/jsonview.css", type: "text/css", media: "screen", charset: "utf-8"}
+    %script{src: "#{ENV['BASE_PATH']}/static/jsonview/jsonview.js", type: "text/javascript"}
   %body
     %div#jsonview
     :javascript

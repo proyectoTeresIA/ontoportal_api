@@ -47,8 +47,9 @@ set :method_override, true
 
 # Setup root and static public directory
 set :root, File.dirname(__FILE__)
+base_path = ENV['BASE_PATH'] || ""
 use Rack::Static,
-  :urls => ["/static"],
+  :urls => ["#{base_path}/static"],
   :root => "public"
 
 # Setup the environment
