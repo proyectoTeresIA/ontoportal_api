@@ -17,6 +17,7 @@ require 'ontologies_linked_data'
 require 'ncbo_annotator'
 require 'ncbo_cron'
 require 'ncbo_ontology_recommender'
+require_relative 'lib/goo_fuseki_data_patch'
 require_relative 'lib/ncbo_annotator_ontolex_extension'
 require_relative 'lib/ncbo_cron_ontologies_report_extension'
 
