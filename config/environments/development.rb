@@ -101,7 +101,7 @@ end
 NcboCron.config do |config|
   config.redis_host = ENV.fetch("REDIS_HOST", "redis-ut")
   config.redis_port = REDIS_PORT.to_i
-  config.ontology_report_path = REPORT_PATH.to_s
+  config.ontology_report_path = ENV.fetch("REPORT_PATH", REPORT_PATH.to_s)
   
   # Do not daemonize in Docker
   config.daemonize = false
@@ -112,6 +112,5 @@ NcboCron.config do |config|
   config.enable_ontology_analytics = false
   config.search_index_all_url = 'http://localhost:8983/solr/term_search_core2'
   config.property_search_server_index_all_url = 'http://localhost:8983/solr/prop_search_core2'
-  config.ontology_report_path = "#{$DATADIR}/reports/ontologies_report.json"
   config.enable_spam_deletion = false
 end
