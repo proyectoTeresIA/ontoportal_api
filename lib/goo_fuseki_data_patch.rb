@@ -1,4 +1,5 @@
 require 'goo/sparql/client'
+require 'uri'
 
 module Goo
   module SPARQL
@@ -32,14 +33,21 @@ module Goo
           }
           params[:payload][:data] = params[:payload][:data].split("\n").map { |x| x.sub("\\\\", "") }.join("\n")
         else
-          joiner = params[:url].include?("?") ? "&" : "?"
           if backend_name.include?("fuseki")
+            uri = URI.parse(params[:url])
+            query_parts = uri.query.to_s.split('&').reject(&:empty?)
+            query_parts.reject! { |q| q == 'default' || q.start_with?('graph=') || q.start_with?('context=') }
+
             if graph && !graph.to_s.empty?
-              params[:url] << "#{joiner}graph=#{CGI.escape(graph.to_s)}"
+              query_parts << "graph=#{CGI.escape(graph.to_s)}"
             else
-              params[:url] << "#{joiner}default"
+              query_parts << 'default'
             end
+
+            uri.query = query_parts.empty? ? nil : query_parts.join('&')
+            params[:url] = uri.to_s
           else
+            joiner = params[:url].include?("?") ? "&" : "?"
             params[:url] << "#{joiner}context=#{CGI.escape("<#{graph}>")}"
           end
           params[:payload] = data_file

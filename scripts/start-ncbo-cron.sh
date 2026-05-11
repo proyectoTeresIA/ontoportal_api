@@ -95,7 +95,10 @@ subs.each do |sub|
     st.code
   end.compact
 
-  next unless status_codes.include?('UPLOADED')
+  # Requeue only submissions that are strictly stuck in UPLADED.
+  # Some pipelines keep UPLADED while adding later statuses (RDF, RDF_LABELS, ...).
+  # Requeueing those causes duplicate processing loops.
+  next unless status_codes.uniq == ['UPLOADED']
 
   sub.bring(:creationDate) if sub.bring?(:creationDate)
   created_at = begin
