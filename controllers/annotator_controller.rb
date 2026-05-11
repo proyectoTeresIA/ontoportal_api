@@ -1,4 +1,8 @@
+require_relative 'concerns/annotator_cache_recovery'
+
 class AnnotatorController < ApplicationController
+  include AnnotatorCacheRecovery
+
   namespace "/annotator" do
 
     get "/recognizers" do
@@ -78,6 +82,11 @@ class AnnotatorController < ApplicationController
 
       begin
         annotations = annotator.annotate(text, options)
+
+        can_auto_repair = respond_to?(:maybe_repair_annotator_cache!, true)
+        if annotations.empty? && can_auto_repair && maybe_repair_annotator_cache!(context: 'annotator')
+          annotations = annotator.annotate(text, options)
+        end
 
         unless includes_param.empty?
           # Move include param to special param so it only applies to classes

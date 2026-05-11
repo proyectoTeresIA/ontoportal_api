@@ -1,6 +1,9 @@
 require 'active_support/all'
+require_relative 'concerns/annotator_cache_recovery'
 
 class RecommenderController < ApplicationController
+  include AnnotatorCacheRecovery
+
   namespace "/recommender" do
 
     get do
@@ -81,6 +84,12 @@ class RecommenderController < ApplicationController
       acronyms = restricted_ontologies_to_acronyms(params)
       recommender = OntologyRecommender::Recommender.new
       ranking = recommender.recommend(input, input_type, output_type, max_elements_set, acronyms, wc, ws, wa, wd)
+
+      can_auto_repair = respond_to?(:maybe_repair_annotator_cache!, true)
+      if ranking.respond_to?(:empty?) && ranking.empty? && can_auto_repair && maybe_repair_annotator_cache!(context: 'recommender')
+        ranking = recommender.recommend(input, input_type, output_type, max_elements_set, acronyms, wc, ws, wa, wd)
+      end
+
       reply 200, ranking
     end
   end
