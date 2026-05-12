@@ -479,6 +479,30 @@
       "report_date_updated": "05/11/2026, 09:29 AM",
       "errNoAnnotator": "Annotator - NO results for: <span class='missing_term'>degotador</span> | <span class='missing_term'>sistema d'infusió contínua</span> | <span class='missing_term'>drip</span> | <span class='missing_term'>gotero</span> | <span class='missing_term'>sistema de goteo intravenoso</span> | <span class='missing_term'>sistema de infusión continua</span> | <span class='missing_term'>sistema de infusión endovenosa</span> | <span class='missing_term'>sistema de infusión intravenosa</span> | <span class='missing_term'>sistema de venoclisis</span> | <span class='missing_term'>goutte-à-goutte</span>",
       "errNoSearch": "Search - NO results for: <span class='missing_term'>degotador</span> | <span class='missing_term'>sistema d'infusió contínua</span> | <span class='missing_term'>drip</span> | <span class='missing_term'>gotero</span> | <span class='missing_term'>sistema de goteo intravenoso</span> | <span class='missing_term'>sistema de infusión continua</span> | <span class='missing_term'>sistema de infusión endovenosa</span> | <span class='missing_term'>sistema de infusión intravenosa</span> | <span class='missing_term'>sistema de venoclisis</span> | <span class='missing_term'>goutte-à-goutte</span>"
+    },
+    "APSAN": {
+      "problem": true,
+      "format": "OWL",
+      "date_created": "05/12/2026, 12:00 AM",
+      "administeredBy": [
+        "admin"
+      ],
+      "logFilePath": "APSAN/1/parsing.log",
+      "report_date_updated": "05/12/2026, 08:28 AM",
+      "errNoAnnotator": "Annotator - NO results for: <span class='missing_term'>Actor</span> | <span class='missing_term'>LexicalConceptualResource</span> | <span class='missing_term'>Concept</span> | <span class='missing_term'>ConceptScheme</span> | <span class='missing_term'>ConceptSet</span> | <span class='missing_term'>Form</span> | <span class='missing_term'>LexicalConcept</span> | <span class='missing_term'>LexicalEntry</span> | <span class='missing_term'>LexicalSense</span> | <span class='missing_term'>Definition</span>",
+      "errNoSearch": "Search - NO results for: <span class='missing_term'>Actor</span> | <span class='missing_term'>LexicalConceptualResource</span> | <span class='missing_term'>Concept</span> | <span class='missing_term'>ConceptScheme</span> | <span class='missing_term'>ConceptSet</span> | <span class='missing_term'>Form</span> | <span class='missing_term'>LexicalConcept</span> | <span class='missing_term'>LexicalEntry</span> | <span class='missing_term'>LexicalSense</span> | <span class='missing_term'>Definition</span>"
+    },
+    "AASS": {
+      "problem": true,
+      "format": "ONTOLEX",
+      "date_created": "05/12/2026, 12:00 AM",
+      "administeredBy": [
+        "admin"
+      ],
+      "logFilePath": "AASS/1/parsing.log",
+      "report_date_updated": "05/12/2026, 09:08 AM",
+      "errNoAnnotator": "Annotator - FEW results for: degotador | sistema d'infusió contínua | drip | gotero | sistema de goteo intravenoso | sistema de infusión continua | sistema de infusión endovenosa | sistema de infusión intravenosa | sistema de venoclisis | goutte-à-goutte",
+      "errNoSearch": "Search - NO results for: <span class='missing_term'>degotador</span> | <span class='missing_term'>sistema d'infusió contínua</span> | <span class='missing_term'>drip</span> | <span class='missing_term'>gotero</span> | <span class='missing_term'>sistema de goteo intravenoso</span> | <span class='missing_term'>sistema de infusión continua</span> | <span class='missing_term'>sistema de infusión endovenosa</span> | <span class='missing_term'>sistema de infusión intravenosa</span> | <span class='missing_term'>sistema de venoclisis</span> | <span class='missing_term'>goutte-à-goutte</span>"
     }
   },
   "report_date_generated": "08/27/2020, 08:36 AM"

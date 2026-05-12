@@ -154,10 +154,12 @@ class SearchController < ApplicationController
 
       page, size = page_params(params)
       q = (text || '').strip.downcase
-      include_attrs = []
+      include_attrs = [:writtenRep, :language]
       forms = []
       if sub
-        forms = LinkedData::Models::OntoLex::Form.in(sub).include(include_attrs).page(page, size).all
+        # Load all forms first, then filter and paginate. Paging before filtering
+        # can miss matches that are not in the first page chunk.
+        forms = LinkedData::Models::OntoLex::Form.in(sub).include(include_attrs).all
       else
         # As a last resort (e.g., in tests), search across all forms
         forms = LinkedData::Models::OntoLex::Form.where.include(include_attrs).all
@@ -176,7 +178,11 @@ class SearchController < ApplicationController
         Array(f.writtenRep).first.to_s.downcase
       end
 
-      page_obj = page_object(forms, forms.length)
+      total = forms.length
+      start_idx = (page - 1) * size
+      forms_page = forms.slice(start_idx, size) || []
+
+      page_obj = page_object(forms_page, total)
       reply 200, page_obj
     end
 
