@@ -47,7 +47,7 @@ end
 # ---------------------------------------------------------------------------
 # 2. Uploaded submission watchdog (background Thread, shares loaded app)
 # ---------------------------------------------------------------------------
-REQUEUE_MIN_AGE_MINUTES  = Integer(ENV.fetch('REQUEUE_MIN_AGE_MINUTES',  '60'))
+REQUEUE_MIN_AGE_MINUTES  = Integer(ENV.fetch('REQUEUE_MIN_AGE_MINUTES',  '180'))
 REQUEUE_INTERVAL_SECONDS = Integer(ENV.fetch('REQUEUE_INTERVAL_SECONDS', '300'))
 ENABLE_WATCHDOG          = ENV.fetch('ENABLE_UPLOADED_REQUEUE_WATCHDOG', 'true') == 'true'
 
