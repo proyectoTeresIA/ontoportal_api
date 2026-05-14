@@ -1,6 +1,5 @@
 class MappingsController < ApplicationController
 
-  # Get mappings for a class
   get '/ontologies/:ontology/classes/:cls/mappings' do
     ontology = ontology_from_acronym(@params[:ontology])
     submission = ontology.latest_submission
@@ -10,28 +9,42 @@ class MappingsController < ApplicationController
       error(404, "Class with id `#{cls_id}` not found in ontology")
     end
 
-    mappings = LinkedData::Mappings.mappings_ontology(submission,
-                                                      0,0,
-                                                      cls.id)
+    mappings = LinkedData::Mappings.mappings_ontology(submission, 0, 0, cls.id)
     populate_mapping_classes(mappings.to_a)
     reply mappings
   end
 
-  # Get mappings for an ontology
+  get '/ontologies/:ontology/lexical_concepts/:concept/mappings' do
+    ontology = ontology_from_acronym(@params[:ontology])
+    error(404, "Ontology not found") unless ontology
+    submission = ontology.latest_submission
+    error(404, "Submission not found for ontology #{@params[:ontology]}") unless submission
+
+    concept_id = CGI.unescape(@params[:concept])
+    page, size = page_params
+    mappings = LinkedData::Mappings.ontolex_mappings_for_concept(submission, concept_id, page, size)
+    reply mappings
+  end
+
   get '/ontologies/:ontology/mappings' do
     ontology = ontology_from_acronym(@params[:ontology])
-    if ontology.nil?
-        error(404, "Ontology not found")
-    end
+    error(404, "Ontology not found") if ontology.nil?
+
     page, size = page_params
     submission = ontology.latest_submission
-    if submission.nil?
-        error(404, "Submission not found for ontology " + ontology.acronym)
+    error(404, "Submission not found for ontology #{ontology.acronym}") if submission.nil?
+
+    submission.bring(:hasOntologyLanguage) if submission.bring?(:hasOntologyLanguage)
+    lang = submission.hasOntologyLanguage
+    lang.bring(:acronym) if lang.respond_to?(:bring) && lang.bring?(:acronym)
+    is_ontolex = lang.respond_to?(:acronym) && lang.acronym.to_s.upcase == 'ONTOLEX'
+
+    if is_ontolex
+      mappings = LinkedData::Mappings.ontolex_mappings_for_concept(submission, nil, page, size)
+    else
+      mappings = LinkedData::Mappings.mappings_ontology(submission, page, size, nil)
+      populate_mapping_classes(mappings)
     end
-    mappings = LinkedData::Mappings.mappings_ontology(submission,
-                                                      page,size,
-                                                      nil)
-    populate_mapping_classes(mappings)
     reply mappings
   end
 
