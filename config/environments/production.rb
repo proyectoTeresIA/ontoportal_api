@@ -41,6 +41,7 @@ LinkedData.config do |config|
   config.replace_url_prefix            = true
   config.enable_security               = true
   config.enable_slices                 = true
+  config.indexing_num_threads          = Integer(ENV.fetch('INDEXING_NUM_THREADS', '4'))
 
   # Caches
   Goo.use_cache                        = false
