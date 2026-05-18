@@ -1,8 +1,20 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Ensure worker has deterministic service endpoints in containerized runs.
+export REDIS_HOST="${REDIS_HOST:-redis-ut}"
+export REDIS_PERSISTENT_HOST="${REDIS_PERSISTENT_HOST:-$REDIS_HOST}"
+export REDIS_PORT="${REDIS_PORT:-6379}"
+export ANNOTATOR_REDIS_HOST="${ANNOTATOR_REDIS_HOST:-$REDIS_PERSISTENT_HOST}"
+export ANNOTATOR_REDIS_PORT="${ANNOTATOR_REDIS_PORT:-$REDIS_PORT}"
+export MGREP_HOST="${MGREP_HOST:-mgrep-ut}"
+export MGREP_ALT_HOST="${MGREP_ALT_HOST:-$MGREP_HOST}"
+
 # Run ncbo_cron from the API app directory so it can load config/config.rb
 cd /srv/ontoportal/ontologies_api
+
+# Prevent git safe.directory failures when ontologies_linked_data is mounted from host.
+git config --global --add safe.directory /srv/ontologies_linked_data || true
 
 # Configure bundler to use the shared path and install gems (no-op if already installed)
 bundle config set --local path /srv/ontoportal/bundle
@@ -18,6 +30,36 @@ echo "Starting ncbo_cron in $RACK_ENV (cwd: $(pwd))"
 # Ensure the log directory and file exist before tailing
 mkdir -p ./log
 touch ./log/scheduler.log
+
+# Fail fast if critical upstream services are not reachable from the worker.
+PRECHECK_SCRIPT=$(cat <<'PRECHECKRUBY'
+require 'bundler/setup'
+require 'redis'
+require 'socket'
+
+redis_host = ENV.fetch('ANNOTATOR_REDIS_HOST', ENV.fetch('REDIS_HOST', 'redis-ut'))
+redis_port = Integer(ENV.fetch('ANNOTATOR_REDIS_PORT', ENV.fetch('REDIS_PORT', '6379')))
+mgrep_host = ENV.fetch('MGREP_HOST', 'mgrep-ut')
+mgrep_port = Integer(ENV.fetch('MGREP_PORT', '55556'))
+
+begin
+  r = Redis.new(host: redis_host, port: redis_port, timeout: 5)
+  pong = r.ping
+  abort("ERROR: Redis ping failed against #{redis_host}:#{redis_port}") unless pong == 'PONG'
+  puts "Startup check OK: Redis reachable at #{redis_host}:#{redis_port}"
+rescue StandardError => e
+  abort("ERROR: Redis unreachable at #{redis_host}:#{redis_port} - #{e.class}: #{e.message}")
+end
+
+begin
+  Socket.tcp(mgrep_host, mgrep_port, connect_timeout: 5) { |s| s.close }
+  puts "Startup check OK: mgrep reachable at #{mgrep_host}:#{mgrep_port}"
+rescue StandardError => e
+  abort("ERROR: mgrep unreachable at #{mgrep_host}:#{mgrep_port} - #{e.class}: #{e.message}")
+end
+PRECHECKRUBY
+)
+echo "$PRECHECK_SCRIPT" | bundle exec ruby
 
 # Capture app root and locate ncbo_cron script in the bundle
 APP_ROOT="$(pwd)"
@@ -148,6 +190,19 @@ cat > /tmp/ncbo_cron_boot.rb <<'RUBY'
 #!/usr/bin/env ruby
 require 'bundler/setup'
 require './app'
+
+# Force cron/annotator Redis targets from env in case library defaults drift to localhost.
+NcboCron.config do |config|
+  config.redis_host = ENV.fetch('REDIS_PERSISTENT_HOST', ENV.fetch('REDIS_HOST', 'redis-ut'))
+  config.redis_port = Integer(ENV.fetch('REDIS_PORT', '6379'))
+end
+
+Annotator.config do |config|
+  config.annotator_redis_host = ENV.fetch('ANNOTATOR_REDIS_HOST', ENV.fetch('REDIS_PERSISTENT_HOST', ENV.fetch('REDIS_HOST', 'redis-ut')))
+  config.annotator_redis_port = Integer(ENV.fetch('ANNOTATOR_REDIS_PORT', ENV.fetch('REDIS_PORT', '6379')))
+  config.mgrep_host = ENV.fetch('MGREP_HOST', 'mgrep-ut')
+  config.mgrep_alt_host = ENV.fetch('MGREP_ALT_HOST', ENV.fetch('MGREP_HOST', 'mgrep-ut'))
+end
 
 bin = ENV['NCBO_CRON_PATH']
 abort("ncbo_cron script not found") unless bin && File.file?(bin)

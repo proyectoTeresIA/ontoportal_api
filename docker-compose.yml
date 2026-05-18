@@ -27,6 +27,7 @@ x-app: &app
     SOLR_LEXICAL_SEARCH_URL: http://solr-ut:8983/solr/lexical_search_core1
     MGREP_HOST: mgrep-ut
     MGREP_PORT: 55556
+    MGREP_ALT_HOST: mgrep-ut
     # Use local ontologies_linked_data from workspace
     ONTLD_PATH: "/srv/ontologies_linked_data"
   stdin_open: true

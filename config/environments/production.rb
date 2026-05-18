@@ -85,7 +85,7 @@ Annotator.config do |config|
   config.mgrep_port            = MGREP_PORT.to_i
   config.mgrep_dictionary_file = MGREP_DICTIONARY_FILE.to_s
   config.stop_words_default_file = './config/default_stop_words.txt'
-  config.mgrep_alt_host          = 'localhost'
+  config.mgrep_alt_host          = ENV.fetch('MGREP_ALT_HOST', MGREP_HOST).to_s
 end
 
 LinkedData::OntologiesAPI.config do |config|
