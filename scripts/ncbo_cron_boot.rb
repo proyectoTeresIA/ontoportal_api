@@ -1,9 +1,15 @@
 require 'bundler/setup'
 require './app'
 
+LOG_FILE = File.open(
+  File.join(ENV.fetch('LOG_PATH', '/srv/ontoportal/ontologies_api/log'), 'ncbo_cron_boot.log'),
+  'a'
+).tap { |f| f.sync = true }
+
 def log(msg)
-  $stdout.puts "[ncbo_cron_boot] #{msg}"
-  $stdout.flush
+  line = "[ncbo_cron_boot] #{msg}"
+  $stdout.puts line
+  LOG_FILE.puts line
 end
 
 # ---------------------------------------------------------------------------
@@ -47,13 +53,38 @@ end
 # ---------------------------------------------------------------------------
 # 2. Uploaded submission watchdog (background Thread, shares loaded app)
 # ---------------------------------------------------------------------------
-REQUEUE_MIN_AGE_MINUTES  = Integer(ENV.fetch('REQUEUE_MIN_AGE_MINUTES',  '180'))
-REQUEUE_INTERVAL_SECONDS = Integer(ENV.fetch('REQUEUE_INTERVAL_SECONDS', '300'))
-ENABLE_WATCHDOG          = ENV.fetch('ENABLE_UPLOADED_REQUEUE_WATCHDOG', 'true') == 'true'
+REQUEUE_MIN_AGE_MINUTES            = Integer(ENV.fetch('REQUEUE_MIN_AGE_MINUTES',            '180'))
+REQUEUE_NO_INDEXED_MIN_AGE_MINUTES = Integer(ENV.fetch('REQUEUE_NO_INDEXED_MIN_AGE_MINUTES', '300'))
+REQUEUE_NO_RDF_MIN_AGE_MINUTES     = Integer(ENV.fetch('REQUEUE_NO_RDF_MIN_AGE_MINUTES',     '360'))
+REQUEUE_INTERVAL_SECONDS    = Integer(ENV.fetch('REQUEUE_INTERVAL_SECONDS',    '300'))
+ENABLE_WATCHDOG             = ENV.fetch('ENABLE_UPLOADED_REQUEUE_WATCHDOG', 'true') == 'true'
+
+# Maps each required status to the action(s) that produce it.
+# Processing order matters: process_rdf must come before downstream steps.
+STATUS_ACTION_MAP = {
+  'RDF'                => { process_rdf: true, generate_labels: true },
+  'RDF_LABELS'         => { generate_labels: true },
+  'INDEXED'            => { index_search: true },
+  'INDEXED_PROPERTIES' => { index_properties: true },
+  'METRICS'            => { run_metrics: true },
+  'ANNOTATOR'          => { process_annotator: true },
+}.freeze
+REQUIRED_STATUSES = STATUS_ACTION_MAP.keys.freeze
+
+# Returns the minimal set of actions needed to complete a submission.
+# A step is included when its success status is absent OR when an ERROR_*
+# for it is present (meaning it ran but failed and needs a retry).
+def needed_actions(status_codes)
+  actions = {}
+  REQUIRED_STATUSES.each do |status|
+    completed = status_codes.include?(status) && !status_codes.include?("ERROR_#{status}")
+    next if completed
+    STATUS_ACTION_MAP[status].each { |k, v| actions[k] = v }
+  end
+  actions
+end
 
 # Returns true if the submission is already sitting in the Redis parse queue.
-# Uses the same QUEUE_HOLDER hash and prefix that OntologySubmissionParser uses
-# internally, so the check is consistent with what the worker will dequeue.
 def already_queued?(submission_id)
   queue_holder = NcboCron::Helpers::OntologyHelper::PROCESS_QUEUE_HOLDER
   prefix       = NcboCron::Helpers::OntologyHelper::REDIS_SUBMISSION_ID_PREFIX
@@ -68,7 +99,9 @@ rescue StandardError
 end
 
 def run_uploaded_requeue
-  threshold = Time.now - (REQUEUE_MIN_AGE_MINUTES * 60)
+  threshold_partial   = Time.now - (REQUEUE_MIN_AGE_MINUTES * 60)
+  threshold_no_indexed = Time.now - (REQUEUE_NO_INDEXED_MIN_AGE_MINUTES * 60)
+  threshold_no_rdf    = Time.now - (REQUEUE_NO_RDF_MIN_AGE_MINUTES * 60)
   parser    = NcboCron::Models::OntologySubmissionParser.new
 
   subs = begin
@@ -97,14 +130,10 @@ def run_uploaded_requeue
       st.code
     end.compact
 
-    # Must have UPLOADED status
     next unless status_codes.include?('UPLOADED')
 
-    # Requeue if ANY required successful status is missing — ensures that a
-    # partially-processed submission (e.g. stopped after RDF but before INDEXED)
-    # gets retried once it exceeds the age threshold.
-    required_statuses = %w[RDF RDF_LABELS METRICS INDEXED ANNOTATOR]
-    next if required_statuses.all? { |s| status_codes.include?(s) }
+    actions = needed_actions(status_codes)
+    next if actions.empty?
 
     sub.bring(:creationDate) if sub.bring?(:creationDate)
     created_at = begin
@@ -113,6 +142,19 @@ def run_uploaded_requeue
       nil
     end
 
+    # Submissions whose RDF step has never succeeded could be actively parsing;
+    # require a longer wait before declaring them stuck.
+    # Submissions with RDF but no INDEXED could be actively indexing (the
+    # slowest step); use an intermediate threshold.
+    rdf_done     = status_codes.include?('RDF') || status_codes.include?('ERROR_RDF')
+    indexed_done = status_codes.include?('INDEXED') || status_codes.include?('ERROR_INDEXED')
+    threshold = if !rdf_done
+                  threshold_no_rdf       # parsing may be in progress
+                elsif !indexed_done
+                  threshold_no_indexed   # indexing may be in progress
+                else
+                  threshold_partial      # only fast steps remain
+                end
     next if created_at && created_at > threshold
 
     # Skip if this submission is already waiting in the parse queue
@@ -121,12 +163,12 @@ def run_uploaded_requeue
       next
     end
 
-    parser.queue_submission(sub, { all: true })
+    parser.queue_submission(sub, actions)
     sub.bring(:submissionId) if sub.bring?(:submissionId)
     sub.bring(:ontology)     if sub.bring?(:ontology)
     sub.ontology.bring(:acronym) if sub.ontology&.bring?(:acronym)
 
-    log "Requeued stale UPLOADED submission #{sub.id} (#{sub.ontology&.acronym}, submissionId=#{sub.submissionId})"
+    log "Requeued stale UPLOADED submission #{sub.id} (#{sub.ontology&.acronym}, submissionId=#{sub.submissionId}, actions=#{actions.keys.join(',')})"
     requeued += 1
   end
 
