@@ -82,7 +82,7 @@ GIT
 
 GIT
   remote: https://github.com/proyectoTeresIA/ontologies_linked_data.git
-  revision: 9c97942a39452b732e64b1bb8878cffdd50a3e72
+  revision: 31273ae9f2d733ac2b607142d3ba99d41f426261
   branch: master
   specs:
     ontologies_linked_data (0.0.1)
@@ -147,7 +147,7 @@ GEM
       rdf
       sxp
     ed25519 (1.4.0)
-    faraday (2.14.1)
+    faraday (2.14.2)
       faraday-net_http (>= 2.0, < 3.5)
       json
       logger
@@ -276,7 +276,7 @@ GEM
     net-ssh (7.3.0)
     netrc (0.11.0)
     newrelic_rpm (9.23.0)
-    oj (3.17.0)
+    oj (3.17.1)
       bigdecimal (>= 3.0)
       ostruct (>= 0.2)
     omni_logger (0.1.4)
