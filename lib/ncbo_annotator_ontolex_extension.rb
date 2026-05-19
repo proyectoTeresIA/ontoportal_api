@@ -50,123 +50,119 @@ module Annotator
       end
       
       private
-      
-      # Create term cache specifically for OntoLex entities
-      def create_ontolex_term_cache(logger, sub, redis=nil, redis_prefix=nil)
-        if sub.nil?
-          logger.error("Error from create_ontolex_term_cache: submission is nil")
-          return
-        end
-        
+
+      def create_ontolex_term_cache(logger, sub, redis = nil, redis_prefix = nil)
+        return logger.error("Error from create_ontolex_term_cache: submission is nil") if sub.nil?
+
         multi_logger = LinkedData::Utils::MultiLogger.new(loggers: logger)
-        log_path = sub.parsing_log_path
-        logger1 = Logger.new(log_path)
-        multi_logger.add_logger(logger1)
-        
-        redis ||= redis()
+        multi_logger.add_logger(Logger.new(sub.parsing_log_path))
+
+        redis        ||= redis()
         redis_prefix ||= redis_current_instance()
-        
-        page = 1
-        size = 500  # Smaller page size for OntoLex due to more complex data
-        count_entries = 0
-        
+
         begin
           time = Benchmark.realtime do
             sub.ontology.bring(:acronym) if sub.ontology.bring?(:acronym)
             ontResourceId = sub.ontology.id.to_s
-            multi_logger.info("Caching OntoLex LexicalEntries for #{sub.ontology.acronym}")
-            
-            # Page through all LexicalEntries in the submission
-            # We index through entries because they link forms to concepts
-            paging = LinkedData::Models::OntoLex::LexicalEntry.in(sub)
-              .include(:evokes, :form, :canonicalForm, :sense).page(page, size)
-            
-            begin
-              entry_page = nil
+            multi_logger.info("Caching OntoLex forms for #{sub.ontology.acronym}")
+
+            # ── Step 1: Load ALL LexicalEntries in one SPARQL query ─────────────
+            # Builds a form_uri → concept_id reverse map without any per-form
+            # round-trips.
+            t0 = Time.now
+            all_entries = LinkedData::Models::OntoLex::LexicalEntry.in(sub)
+                              .include(:evokes, :canonicalForm, :form, :otherForm, :sense)
+                              .all
+            multi_logger.info("Loaded #{all_entries.length} entries in #{(Time.now - t0).round(2)}s")
+
+            form_to_concept = {}  # form_uri_string → concept_id_string
+            sense_entry_map = {}  # sense_uri_string → entry (resolved in step 2)
+
+            all_entries.each do |entry|
+              concept_id = entry.evokes.is_a?(Array) ? entry.evokes.first : entry.evokes
+
+              if concept_id
+                [entry.canonicalForm,
+                 *Array(entry.form),
+                 *Array(entry.otherForm)].compact.each do |fid|
+                  form_to_concept[fid.to_s] ||= concept_id.to_s
+                end
+              elsif entry.sense
+                Array(entry.sense).compact.each { |sid| sense_entry_map[sid.to_s] = entry }
+              end
+            end
+
+            # ── Step 2: Resolve senses in one SPARQL query ───────────────────────
+            if sense_entry_map.any?
               t0 = Time.now
-              entry_page = paging.all()
-              count_entries += entry_page.length
-              multi_logger.info("Page #{page} - #{entry_page.length} entries retrieved in #{Time.now - t0} sec.")
-              
-              t0 = Time.now
-              
-              entry_page.each do |entry|
-                begin
-                  # Get the concept this entry evokes
-                  concept_id = nil
-                  
-                  # Try to get concept from evokes attribute
-                  if entry.evokes
-                    concept_id = entry.evokes.is_a?(Array) ? entry.evokes.first : entry.evokes
-                  end
-                  
-                  # If no evokes, try through senses
-                  if concept_id.nil? && entry.sense
-                    senses = entry.sense.is_a?(Array) ? entry.sense : [entry.sense]
-                    senses.each do |sense_id|
-                      begin
-                        sense = LinkedData::Models::OntoLex::LexicalSense.find(sense_id).in(sub).include(:isLexicalizedSenseOf).first
-                        if sense && sense.isLexicalizedSenseOf
-                          concept_id = sense.isLexicalizedSenseOf
-                          break
-                        end
-                      rescue => e
-                        # Skip if sense not found
-                      end
-                    end
-                  end
-                  
-                  next unless concept_id  # Skip entries without concepts
-                  
-                  # Collect all forms for this entry
-                  form_ids = []
-                  form_ids << entry.canonicalForm if entry.canonicalForm
-                  if entry.form
-                    form_ids.concat(entry.form.is_a?(Array) ? entry.form : [entry.form])
-                  end
-                  
-                  # Index each form
-                  form_ids.compact.uniq.each do |form_id|
-                    begin
-                      form = LinkedData::Models::OntoLex::Form.find(form_id).in(sub).include(:writtenRep).first
-                      next unless form && form.writtenRep
-                      
-                      # Create term entry for this form's writtenRep pointing to the concept
-                      create_term_entry(
-                        redis,
-                        redis_prefix,
-                        ontResourceId,
-                        concept_id.to_s,  # Point to the LexicalConcept
-                        Annotator::Annotation::MATCH_TYPES[:type_preferred_name],
-                        form.writtenRep.to_s,
-                        []  # OntoLex doesn't have semantic types
-                      )
-                    rescue Exception => e
-                      multi_logger.error("Error loading form #{form_id}: #{e.message}")
-                    end
-                  end
-                  
-                rescue Exception => e
-                  multi_logger.error("Error indexing OntoLex entry #{entry.id}: #{e.class}: #{e.message}")
+              all_senses = LinkedData::Models::OntoLex::LexicalSense.in(sub)
+                               .include(:isLexicalizedSenseOf)
+                               .all
+              multi_logger.info("Loaded #{all_senses.length} senses in #{(Time.now - t0).round(2)}s")
+
+              all_senses.each do |sense|
+                next unless sense.isLexicalizedSenseOf
+                entry = sense_entry_map[sense.id.to_s]
+                next unless entry
+
+                concept_id = sense.isLexicalizedSenseOf
+                [entry.canonicalForm,
+                 *Array(entry.form),
+                 *Array(entry.otherForm)].compact.each do |fid|
+                  form_to_concept[fid.to_s] ||= concept_id.to_s
                 end
               end
-              
-              multi_logger.info("Page #{page} cached in Annotator in #{Time.now - t0} sec.")
-              page = entry_page.next_page
-              
-              if page
-                paging.page(page)
+            end
+
+            multi_logger.info("form→concept map: #{form_to_concept.size} mappings from #{all_entries.length} entries")
+
+            # ── Step 3: Page through Forms and index writtenRep values ───────────
+            # Strips HTML tags so "<i>Leishmania</i>" indexes as "Leishmania".
+            count_indexed = 0
+            lex_page = 1
+            lex_size = 1000
+
+            loop do
+              t0 = Time.now
+              forms = LinkedData::Models::OntoLex::Form.in(sub)
+                          .include(:writtenRep)
+                          .page(lex_page, lex_size)
+                          .all
+              break if forms.empty?
+
+              forms.each do |form|
+                next unless form.writtenRep
+
+                concept_id = form_to_concept[form.id.to_s]
+                next unless concept_id
+
+                # Strip HTML tags (e.g. <i>term</i> → term)
+                written_rep = form.writtenRep.to_s.gsub(/<[^>]+>/, '').strip
+                next if written_rep.empty?
+
+                create_term_entry(
+                  redis, redis_prefix, ontResourceId, concept_id,
+                  Annotator::Annotation::MATCH_TYPES[:type_preferred_name],
+                  written_rep, []
+                )
+                count_indexed += 1
               end
-            end while !page.nil?
+
+              multi_logger.info("Page #{lex_page}: #{forms.length} forms, #{count_indexed} indexed so far (#{(Time.now - t0).round(2)}s)")
+              break unless forms.next?
+              lex_page += 1
+            end
+
+            multi_logger.info("Indexed #{count_indexed} OntoLex form entries for #{sub.ontology.acronym}.")
           end
-          
-          multi_logger.info("Completed caching OntoLex entries for: #{sub.ontology.acronym} (#{sub.id.to_s}) in #{time} sec. #{count_entries} entries.")
+
+          multi_logger.info("Completed OntoLex annotator cache for #{sub.ontology.acronym} (#{sub.id}) in #{time.round(2)}s")
         rescue Exception => e
-          msg = "Failed caching OntoLex entries for #{sub.ontology.acronym} (#{sub.id.to_s})"
-          multi_logger.error(msg)
-          multi_logger.error(e.message + "\n" + e.backtrace.join("\n\t"))
+          multi_logger.error("Failed caching OntoLex entries for #{sub.ontology.acronym} (#{sub.id})")
+          multi_logger.error("#{e.class}: #{e.message}\n#{e.backtrace.join("\n\t")}")
+        ensure
+          multi_logger.flush
         end
-        multi_logger.flush()
       end
       
     end
