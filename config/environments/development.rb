@@ -1,6 +1,7 @@
 require 'ontologies_linked_data'
 require 'ncbo_annotator'
 require 'ncbo_cron'
+require 'fileutils'
 
 GOO_BACKEND_NAME = ENV.fetch('GOO_BACKEND_NAME', '4store')
 GOO_HOST         = ENV.fetch('GOO_HOST', 'localhost')
@@ -101,7 +102,13 @@ end
 NcboCron.config do |config|
   config.redis_host = ENV.fetch("REDIS_HOST", "redis-ut")
   config.redis_port = REDIS_PORT.to_i
-  config.ontology_report_path = ENV.fetch("REPORT_PATH", REPORT_PATH.to_s)
+  report_path = ENV.fetch("REPORT_PATH", REPORT_PATH.to_s)
+  begin
+    FileUtils.mkdir_p(File.dirname(report_path))
+  rescue StandardError => e
+    warn "(CR) >> Could not create report directory #{File.dirname(report_path)}: #{e.class}: #{e.message}"
+  end
+  config.ontology_report_path = report_path
   
   # Do not daemonize in Docker
   config.daemonize = false

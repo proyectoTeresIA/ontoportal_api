@@ -83,6 +83,11 @@ class SearchController < ApplicationController
     # OntoLex lexical entry search with full Solr support
     # Supports language filtering, subject/domain filtering, and all standard search features
     def process_lexical_search(params, text)
+      params["_requested_ontologies"] = params[Sinatra::Helpers::SearchHelper::ONTOLOGIES_PARAM]
+
+      direct_page = lexical_search_direct_page(params, text)
+      return reply 200, direct_page if direct_page
+
       set_page_params(params)
 
       # Try Solr first if available
@@ -102,6 +107,11 @@ class SearchController < ApplicationController
         
         resp = LinkedData::Models::OntoLex::Form.search(query, params)
         total_found = resp["response"]["numFound"]
+        if total_found.to_i == 0
+          # In local/dev environments the Solr lexical core can be empty even when
+          # OntoLex data exists in RDF. Fall back to direct store search.
+          return reply 200, lexical_search_fallback_page(params, text)
+        end
         add_matched_fields(resp, Sinatra::Helpers::SearchHelper::MATCH_TYPE_PREFLABEL)
         
         docs = []
@@ -149,7 +159,86 @@ class SearchController < ApplicationController
       sub = nil
       if onts.length == 1
         ont = onts.first
-        sub = ont.latest_submission(status: [:RDF])
+        ont.bring(:submissions) if ont.respond_to?(:bring?) && ont.bring?(:submissions)
+        sub = ont.latest_submission(status: :any)
+      end
+
+      reply 200, lexical_search_fallback_page(params, text)
+    end
+
+    def lexical_search_direct_page(params, text)
+      requested_ontologies = params[Sinatra::Helpers::SearchHelper::ONTOLOGIES_PARAM].to_s
+      acronyms = requested_ontologies.split(',').map(&:strip).reject(&:empty?)
+
+      if acronyms.empty?
+        restricted = restricted_ontologies(params)
+        acronyms = restricted.map { |o| o.respond_to?(:acronym) ? o.acronym.to_s : nil }.compact.uniq
+      end
+
+      return nil unless acronyms.length == 1
+
+      ont = LinkedData::Models::Ontology.find(acronyms.first).first
+      ont ||= LinkedData::Models::Ontology.find_by_acronym(acronyms.first).first
+      return nil unless ont
+
+      ont.bring(:submissions) if ont.respond_to?(:bring?) && ont.bring?(:submissions)
+      submission = ont.latest_submission(status: [:RDF])
+      submission ||= ont.latest_submission(status: :any)
+      return nil unless submission
+
+      page, size = page_params(params)
+      q = (text || '').strip.downcase
+      all_items = LinkedData::Models::OntoLex::Form.in(submission).include(:writtenRep).all
+
+      items_with_labels = all_items.map do |item|
+        label = (item.writtenRep || item.id.to_s.split('/').last).to_s
+        { id: item.id, label: label, label_lower: label.downcase }
+      end
+
+      if !q.empty?
+        items_with_labels.select! { |item| item[:label_lower].include?(q) }
+      end
+
+      items_with_labels.sort_by! { |item| item[:label_lower] }
+      total = items_with_labels.length
+      start_idx = (page - 1) * size
+      page_items = items_with_labels.slice(start_idx, size) || []
+
+      if page_items.any?
+        page_ids = page_items.map { |item| item[:id] }
+        full_ld = LinkedData::Models::OntoLex::Form.goo_attrs_to_load([:all])
+        items = LinkedData::Models::OntoLex::Form.list_for_ids(submission, page_ids, full_ld)
+        id_to_item = items.index_by { |i| i.id.to_s }
+        items = page_ids.map { |id| id_to_item[id.to_s] }.compact
+        items.each { |it| it.ensure_computed rescue nil }
+      else
+        items = []
+      end
+
+      page_object(items, total)
+    rescue StandardError => e
+      Log.add :error, "Lexical direct search fallback failed: #{e.class}: #{e.message}"
+      nil
+    end
+
+    def lexical_search_fallback_page(params, text)
+      requested_ontologies = params["_requested_ontologies"].to_s
+      onts = restricted_ontologies(params)
+      sub = nil
+      if !requested_ontologies.empty?
+        acronyms = requested_ontologies.split(',').map(&:strip).reject(&:empty?)
+        if acronyms.length == 1
+          ont = LinkedData::Models::Ontology.find(acronyms.first).first
+          ont ||= LinkedData::Models::Ontology.find_by_acronym(acronyms.first).first
+          if ont
+            ont.bring(:submissions) if ont.respond_to?(:bring?) && ont.bring?(:submissions)
+            sub = ont.latest_submission(status: :any)
+          end
+        end
+      elsif onts.length == 1
+        ont = onts.first
+        ont.bring(:submissions) if ont.respond_to?(:bring?) && ont.bring?(:submissions)
+        sub = ont.latest_submission(status: :any)
       end
 
       page, size = page_params(params)
@@ -182,8 +271,7 @@ class SearchController < ApplicationController
       start_idx = (page - 1) * size
       forms_page = forms.slice(start_idx, size) || []
 
-      page_obj = page_object(forms_page, total)
-      reply 200, page_obj
+      page_object(forms_page, total)
     end
 
   end

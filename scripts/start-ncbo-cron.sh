@@ -14,7 +14,9 @@ export MGREP_ALT_HOST="${MGREP_ALT_HOST:-$MGREP_HOST}"
 cd /srv/ontoportal/ontologies_api
 
 # Prevent git safe.directory failures when ontologies_linked_data is mounted from host.
-git config --global --add safe.directory /srv/ontologies_linked_data || true
+# Run this outside app cwd because /srv/ontoportal/ontologies_api may be a submodule mount
+# with a non-mounted parent .git directory in containers.
+(cd /tmp && git config --global --add safe.directory /srv/ontologies_linked_data) || true
 
 # Configure bundler to use the shared path and install gems (no-op if already installed)
 bundle config set --local path /srv/ontoportal/bundle

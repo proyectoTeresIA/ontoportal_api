@@ -1,4 +1,5 @@
 require 'multi_json'
+require 'fileutils'
 
 class AdminController < ApplicationController
 
@@ -90,30 +91,55 @@ class AdminController < ApplicationController
 
     get "/ontologies_report" do
       suppress_error = params["suppress_error"].eql?('true') # default = false
-      reply NcboCron::Models::OntologiesReport.new.ontologies_report(suppress_error)
+      begin
+        ensure_report_directory!
+        reply NcboCron::Models::OntologiesReport.new.ontologies_report(suppress_error)
+      rescue StandardError => e
+        msg = "Error retrieving ontologies report - #{e.class}: #{e.message}"
+        puts "#{msg}\n#{e.backtrace.join("\n\t")}" if e.backtrace
+        payload = {
+          ontologies: {},
+          report_date_generated: nil,
+          errors: [msg]
+        }
+        reply payload
+      end
     end
 
     post "/ontologies_report" do
-      ontologies = ontologies_param_to_acronyms(params)
-      args = {name: "ontologies_report", message: "refreshing ontologies report"}
-      process_id = process_long_operation(900, args) do |args|
-        NcboCron::Models::OntologiesReport.new.refresh_report(ontologies)
+      begin
+        ensure_report_directory!
+        ontologies = ontologies_param_to_acronyms(params)
+        args = {name: "ontologies_report", message: "refreshing ontologies report"}
+        process_id = process_long_operation(900, args) do |args|
+          NcboCron::Models::OntologiesReport.new.refresh_report(ontologies)
+        end
+        reply(process_id: process_id)
+      rescue StandardError => e
+        msg = "Error starting ontologies report refresh - #{e.class}: #{e.message}"
+        puts "#{msg}\n#{e.backtrace.join("\n\t")}" if e.backtrace
+        reply(errors: [msg])
       end
-      reply(process_id: process_id)
     end
 
     get "/ontologies_report/:process_id" do
-      process_id = MultiJson.load(redis.get(params["process_id"]))
+      begin
+        process_id = MultiJson.load(redis.get(params["process_id"]))
 
-      if process_id.nil?
-        error 404, "Process id #{params["process_id"]} does not exit"
-      else
-        if process_id === "done"
-          reply NcboCron::Models::OntologiesReport.new.ontologies_report(false)
+        if process_id.nil?
+          error 404, "Process id #{params["process_id"]} does not exit"
         else
-          # either "processing" OR errors {errors: ["errorA", "errorB"]}
-          reply process_id
+          if process_id === "done"
+            reply NcboCron::Models::OntologiesReport.new.ontologies_report(false)
+          else
+            # either "processing" OR errors {errors: ["errorA", "errorB"]}
+            reply process_id
+          end
         end
+      rescue StandardError => e
+        msg = "Error checking ontologies report process #{params["process_id"]} - #{e.class}: #{e.message}"
+        puts "#{msg}\n#{e.backtrace.join("\n\t")}" if e.backtrace
+        reply(errors: [msg])
       end
     end
 
@@ -128,6 +154,16 @@ class AdminController < ApplicationController
     end
 
     private
+
+    def ensure_report_directory!
+      report_path = NcboCron.settings.ontology_report_path.to_s
+      return if report_path.empty?
+
+      report_dir = File.dirname(report_path)
+      return if report_dir.nil? || report_dir.empty?
+
+      FileUtils.mkdir_p(report_dir)
+    end
 
     def process_long_operation(timeout, args)
       process_id = "#{Time.now.to_i}_#{args[:name]}"

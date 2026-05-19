@@ -1,6 +1,7 @@
 require 'ontologies_linked_data'
 require 'ncbo_annotator'
 require 'ncbo_cron'
+require 'fileutils'
 
 GOO_BACKEND_NAME = ENV.fetch('GOO_BACKEND_NAME', '4store')
 GOO_HOST         = ENV.fetch('GOO_HOST', 'localhost')
@@ -112,7 +113,18 @@ NcboCron.config do |config|
   config.enable_ontology_analytics = true
   config.search_index_all_url = 'http://localhost:8983/solr/term_search_core2'
   config.property_search_server_index_all_url = 'http://localhost:8983/solr/prop_search_core2'
-  config.ontology_report_path = "#{$DATADIR}/reports/ontologies_report.json"
+  report_root = if defined?($DATADIR) && !$DATADIR.to_s.strip.empty?
+                  $DATADIR.to_s
+                else
+                  ENV.fetch('DATADIR', '/srv/ontoportal/ontologies_api')
+                end
+  report_dir = File.join(report_root, 'reports')
+  begin
+    FileUtils.mkdir_p(report_dir)
+  rescue StandardError => e
+    warn "(CR) >> Could not create report directory #{report_dir}: #{e.class}: #{e.message}"
+  end
+  config.ontology_report_path = File.join(report_dir, 'ontologies_report.json')
   config.enable_spam_deletion = false
   config.enable_dictionary_generation_cron_job = true
   config.cron_dictionary_generation_cron_job = "30 3 * * *"
