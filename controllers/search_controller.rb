@@ -84,6 +84,9 @@ class SearchController < ApplicationController
     # Supports language filtering, subject/domain filtering, and all standard search features
     def process_lexical_search(params, text)
       params["_requested_ontologies"] = params[Sinatra::Helpers::SearchHelper::ONTOLOGIES_PARAM]
+      # Lexical Form links may require deep-loaded submission.ontology and can fail
+      # when search results are partially hydrated from Solr docs.
+      params['display_links'] = 'false'
 
       direct_page = lexical_search_direct_page(params, text)
       return reply 200, direct_page if direct_page

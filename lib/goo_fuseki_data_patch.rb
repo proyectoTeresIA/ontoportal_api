@@ -4,6 +4,30 @@ require 'uri'
 module Goo
   module SPARQL
     class Client
+      # Fuseki does not support the custom `rules` query parameter used by other backends.
+      # Strip it to avoid per-request warnings and unnecessary query-string noise.
+      unless method_defined?(:query_without_fuseki_rules_patch)
+        alias_method :query_without_fuseki_rules_patch, :query
+
+        def query(query_string = nil, options = {}, &block)
+          backend_name = Goo.sparql_backend_name.to_s.downcase
+          if backend_name.include?("fuseki") && options.is_a?(Hash)
+            query_options = options[:query_options]
+            if query_options.is_a?(Hash)
+              clean_query_options = query_options.dup
+              clean_query_options.delete(:rules)
+              clean_query_options.delete('rules')
+
+              clean_options = options.dup
+              clean_options[:query_options] = clean_query_options
+              options = clean_options
+            end
+          end
+
+          query_without_fuseki_rules_patch(query_string, options, &block)
+        end
+      end
+
       private
 
       # Fuseki requires either ?graph=... or ?default for /data POST requests.
