@@ -13,6 +13,33 @@ module Sinatra
       PART_OF_SPEECH_PARAM = "part_of_speech"
       TERM_TYPE_PARAM = "term_type"
 
+      LANGUAGE_ALIASES = {
+        'es' => ['es', 'spa'],
+        'spa' => ['spa', 'es'],
+        'en' => ['en', 'eng'],
+        'eng' => ['eng', 'en'],
+        'fr' => ['fr', 'fra', 'fre'],
+        'fra' => ['fra', 'fre', 'fr'],
+        'fre' => ['fre', 'fra', 'fr'],
+        'ca' => ['ca', 'cat'],
+        'cat' => ['cat', 'ca'],
+        'gl' => ['gl', 'glg'],
+        'glg' => ['glg', 'gl'],
+        'it' => ['it', 'ita'],
+        'ita' => ['ita', 'it'],
+        'pt' => ['pt', 'por'],
+        'por' => ['por', 'pt']
+      }.freeze
+
+      def normalized_language_values(raw_language)
+        return [] if raw_language.nil?
+
+        value = raw_language.to_s.strip.downcase
+        return [] if value.empty?
+
+        LANGUAGE_ALIASES.fetch(value, [value])
+      end
+
       # Build a Solr query for lexical entry search
       # Similar to get_term_search_query but optimized for OntoLex data
       def get_lexical_search_query(text, params={})
@@ -77,7 +104,12 @@ module Sinatra
 
         # Language filtering
         if params[LANGUAGE_PARAM] && !params[LANGUAGE_PARAM].empty?
-          lang_clause = "language:#{params[LANGUAGE_PARAM]}"
+          languages = normalized_language_values(params[LANGUAGE_PARAM])
+          lang_clause = if languages.length == 1
+                          "language:#{languages.first}"
+                        else
+                          "language:(#{languages.join(' OR ')})"
+                        end
           filter_query = filter_query.empty? ? lang_clause : "#{filter_query} AND #{lang_clause}"
         end
 

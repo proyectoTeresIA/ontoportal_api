@@ -2,6 +2,24 @@ require 'multi_json'
 require 'cgi'
 
 class SearchController < ApplicationController
+  LANGUAGE_ALIASES = {
+    'es' => ['es', 'spa'],
+    'spa' => ['spa', 'es'],
+    'en' => ['en', 'eng'],
+    'eng' => ['eng', 'en'],
+    'fr' => ['fr', 'fra', 'fre'],
+    'fra' => ['fra', 'fre', 'fr'],
+    'fre' => ['fre', 'fra', 'fr'],
+    'ca' => ['ca', 'cat'],
+    'cat' => ['cat', 'ca'],
+    'gl' => ['gl', 'glg'],
+    'glg' => ['glg', 'gl'],
+    'it' => ['it', 'ita'],
+    'ita' => ['ita', 'it'],
+    'pt' => ['pt', 'por'],
+    'por' => ['por', 'pt']
+  }.freeze
+
   namespace "/search" do
     # execute a search query
     get do
@@ -198,6 +216,14 @@ class SearchController < ApplicationController
         { id: item.id, label: label, label_lower: label.downcase }
       end
 
+      language_filter_values = normalized_language_values(params['language'])
+      if language_filter_values.any?
+        items_with_labels.select! do |item|
+          lang_code = extract_language_code_from_id(item[:id])
+          !lang_code.nil? && language_filter_values.include?(lang_code)
+        end
+      end
+
       if !q.empty?
         items_with_labels.select! { |item| item[:label_lower].include?(q) }
       end
@@ -257,6 +283,17 @@ class SearchController < ApplicationController
         forms = LinkedData::Models::OntoLex::Form.where.include(include_attrs).all
       end
 
+      language_filter_values = normalized_language_values(params['language'])
+      if language_filter_values.any?
+        forms.select! do |f|
+          form_languages = Array(f.respond_to?(:language) ? f.language : nil).flatten.compact
+          form_languages.any? do |lang|
+            lang_code = extract_language_code(lang)
+            !lang_code.nil? && language_filter_values.include?(lang_code)
+          end
+        end
+      end
+
       # Simple filter by writtenRep (case-insensitive substring). If q is empty, return page unchanged.
       if !q.empty?
         forms.select! do |f|
@@ -275,6 +312,35 @@ class SearchController < ApplicationController
       forms_page = forms.slice(start_idx, size) || []
 
       page_object(forms_page, total)
+    end
+
+    def normalized_language_values(raw_language)
+      return [] if raw_language.nil?
+
+      value = raw_language.to_s.strip.downcase
+      return [] if value.empty?
+
+      LANGUAGE_ALIASES.fetch(value, [value])
+    end
+
+    def extract_language_code(lang_value)
+      return nil if lang_value.nil?
+
+      lang = lang_value.to_s.strip.downcase
+      return nil if lang.empty?
+
+      lang.split('/').last
+    end
+
+    def extract_language_code_from_id(resource_id)
+      return nil if resource_id.nil?
+
+      id = resource_id.to_s.downcase
+      # Common lexical IDs in this dataset include patterns like ..._es_... or ..._gl_...
+      match = id.match(/(?:^|[_\/\-])(es|spa|en|eng|fr|fra|fre|ca|cat|gl|glg|it|ita|pt|por)(?:[_\/\-]|$)/)
+      return nil unless match
+
+      match[1]
     end
 
   end

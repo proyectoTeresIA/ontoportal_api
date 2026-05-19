@@ -88,6 +88,10 @@ class AnnotatorController < ApplicationController
           annotations = annotator.annotate(text, options)
         end
 
+        # Deduplicate equivalent annotations that resolve to multiple URIs for the
+        # same concept/span. Prefer multilingual concept URIs when available.
+        annotations = deduplicate_annotations_prioritizing_multilingual(annotations)
+
         unless includes_param.empty?
           # Move include param to special param so it only applies to classes
           params["include_for_class"] = includes_param
@@ -109,6 +113,78 @@ class AnnotatorController < ApplicationController
       end
 
       reply 200, annotations
+    end
+
+    def deduplicate_annotations_prioritizing_multilingual(annotations)
+      return annotations if annotations.nil? || annotations.empty?
+
+      selected = {}
+      order = []
+
+      annotations.each do |annotation|
+        key = annotation_dedup_key(annotation)
+        existing = selected[key]
+
+        if existing.nil?
+          selected[key] = annotation
+          order << key
+        elsif annotation_priority(annotation) > annotation_priority(existing)
+          selected[key] = annotation
+        end
+      end
+
+      order.map { |k| selected[k] }
+    end
+
+    def annotation_dedup_key(annotation)
+      [annotation_ontology_id(annotation), annotation_local_id(annotation), annotation_span_key(annotation)]
+    end
+
+    def annotation_priority(annotation)
+      class_id = annotation_class_id(annotation).downcase
+      score = 0
+      score += 100 if class_id.include?('multilingue') || class_id.include?('multilingual')
+      score += 10 if class_id.include?('/teresia.es/')
+      score
+    end
+
+    def annotation_span_key(annotation)
+      return '' unless annotation.respond_to?(:annotations)
+
+      Array(annotation.annotations).map do |match|
+        from = match.respond_to?(:from) ? match.from : nil
+        to = match.respond_to?(:to) ? match.to : nil
+        "#{from}-#{to}"
+      end.uniq.sort.join(',')
+    end
+
+    def annotation_local_id(annotation)
+      class_id = annotation_class_id(annotation)
+      return '' if class_id.empty?
+
+      class_id.split('/').last.to_s
+    end
+
+    def annotation_ontology_id(annotation)
+      cls = annotation.respond_to?(:annotatedClass) ? annotation.annotatedClass : nil
+      return '' if cls.nil?
+
+      submission = cls.respond_to?(:submission) ? cls.submission : nil
+      ontology = submission.respond_to?(:ontology) ? submission.ontology : nil
+      ontology_id = ontology.respond_to?(:id) ? ontology.id : nil
+      ontology_id.to_s
+    rescue StandardError
+      ''
+    end
+
+    def annotation_class_id(annotation)
+      cls = annotation.respond_to?(:annotatedClass) ? annotation.annotatedClass : nil
+      return '' if cls.nil?
+
+      class_id = cls.respond_to?(:id) ? cls.id : nil
+      class_id.to_s
+    rescue StandardError
+      ''
     end
 
     post '/dictionary' do
