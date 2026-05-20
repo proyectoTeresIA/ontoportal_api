@@ -55,7 +55,11 @@ module Annotator
         return logger.error("Error from create_ontolex_term_cache: submission is nil") if sub.nil?
 
         multi_logger = LinkedData::Utils::MultiLogger.new(loggers: logger)
-        multi_logger.add_logger(Logger.new(sub.parsing_log_path))
+        begin
+          multi_logger.add_logger(Logger.new(sub.parsing_log_path))
+        rescue StandardError
+          # If log file creation fails, continue with just the primary logger
+        end
 
         redis        ||= redis()
         redis_prefix ||= redis_current_instance()

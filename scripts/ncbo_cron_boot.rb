@@ -27,8 +27,9 @@ def check_annotator_cache
   dict_size = redis.hlen(dict_key)
   log "Annotator cache size: #{dict_size} entries"
 
-  if dict_size == 0
-    log "Annotator cache empty - regenerating..."
+  min_expected = Integer(ENV.fetch('ANNOTATOR_CACHE_MIN_ENTRIES', '70000'))
+  if dict_size < min_expected
+    log "Annotator cache below threshold (#{dict_size} < #{min_expected}) - regenerating..."
     annotator.create_term_cache(nil, false)
     annotator.generate_dictionary_file
     log "Annotator cache regenerated: #{redis.hlen(dict_key)} entries"
@@ -134,6 +135,23 @@ def run_uploaded_requeue
 
     actions = needed_actions(status_codes)
     next if actions.empty?
+
+    # Skip if the submission is currently being processed (parsing log recently written).
+    # ncbo_cron removes the queue entry and clears statuses BEFORE processing starts,
+    # so checking the parse queue alone is insufficient. The parsing log mtime is the
+    # most reliable indicator that processing is actually underway right now.
+    begin
+      repo_folder = ENV.fetch('REPOSITORY_FOLDER', '/srv/ontoportal/data/repository')
+      ont_acronym = sub.ontology.acronym.to_s
+      sub_id      = sub.submissionId.to_s
+      log_path    = File.join(repo_folder, ont_acronym, sub_id, 'parsing.log')
+      if File.exist?(log_path) && File.mtime(log_path) > (Time.now - 1800)
+        skipped += 1
+        next
+      end
+    rescue StandardError
+      # Non-fatal: if we can't check the log, proceed with threshold-based logic
+    end
 
     sub.bring(:creationDate) if sub.bring?(:creationDate)
     created_at = begin
