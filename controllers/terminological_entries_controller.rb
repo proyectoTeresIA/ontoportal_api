@@ -39,7 +39,18 @@ class TerminologicalEntriesController < ApplicationController
       
       # Filter and sort by relevance (prefix matches first, then position-based)
       items_with_labels = filter_and_sort_by_relevance(items_with_labels, search_query)
-      
+
+      # Filter by language if provided
+      language_filter = (params['language'] || '').strip
+      unless language_filter.empty?
+        items_with_labels = items_with_labels.select do |item|
+          lang = item[:language].to_s
+          lang == language_filter ||
+            lang.split('/').last == language_filter ||
+            lang.split('#').last == language_filter
+        end
+      end
+
       # Pagination
       total = items_with_labels.length
       
@@ -71,6 +82,18 @@ class TerminologicalEntriesController < ApplicationController
       end
       
       reply page_object(enriched_entries, total)
+    end
+
+    # List unique language codes used across all terminological entries in this ontology
+    get '/languages' do
+      ont, submission = get_ontology_and_submission
+      all_entries = LinkedData::Models::OntoLex::LexicalEntry.in(submission).include(:language).all
+      codes = all_entries.map { |e| e.language&.to_s }.compact.uniq.map do |uri|
+        uri.split('/').last.split('#').last
+      end.reject(&:empty?).sort
+      # Log the unique language codes for debugging
+      logger.debug "Unique language codes for ontology #{ont.acronym}: #{codes.inspect}"
+      reply codes
     end
 
     get '/*' do
