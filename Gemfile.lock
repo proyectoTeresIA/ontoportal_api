@@ -82,7 +82,7 @@ GIT
 
 GIT
   remote: https://github.com/proyectoTeresIA/ontologies_linked_data.git
-  revision: efe0851e92fb4cb2b44402f1c905451de110b6c6
+  revision: 79b24a09c6438ad8e3712b0273d4d9c0e20334f5
   branch: master
   specs:
     ontologies_linked_data (0.0.1)
@@ -153,7 +153,7 @@ GEM
       logger
     faraday-follow_redirects (0.4.0)
       faraday (>= 1, < 3)
-    faraday-net_http (3.4.2)
+    faraday-net_http (3.4.3)
       net-http (~> 0.5)
     faraday-retry (2.3.2)
       faraday (~> 2.0)
