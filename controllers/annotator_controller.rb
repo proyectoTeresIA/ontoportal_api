@@ -113,6 +113,7 @@ class AnnotatorController < ApplicationController
       delete_cache = params['delete_cache'].eql?('true')
       annotator = Annotator::Models::NcboAnnotator.new
       annotator.create_term_cache(nil, delete_cache)
+      annotator.redis_switch_instance if delete_cache
     end
 
     private

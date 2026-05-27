@@ -17,6 +17,32 @@ end
 # ---------------------------------------------------------------------------
 ANNOTATOR_CACHE_CHECK_INTERVAL = Integer(ENV.fetch('ANNOTATOR_CACHE_CHECK_INTERVAL_HOURS', '8')) * 3600
 
+ADMIN_USER_MUTEX = Mutex.new
+@admin_user_loaded = false
+@admin_user = nil
+
+def admin_user
+  ADMIN_USER_MUTEX.synchronize do
+    unless @admin_user_loaded
+      @admin_user = LinkedData::Models::User.where(
+        role: LinkedData::Models::Users::Role.find("ADMINISTRATOR").first
+      ).include(:username, :role).first rescue nil
+      @admin_user_loaded = true
+    end
+  end
+  @admin_user
+end
+
+def with_admin_user
+  original_user = Thread.current[:remote_user]
+  Thread.current[:remote_user] = admin_user if admin_user && !original_user
+  begin
+    yield
+  ensure
+    Thread.current[:remote_user] = original_user
+  end
+end
+
 def check_annotator_cache
   annotator = Annotator::Models::NcboAnnotator.new
   redis     = Redis.new(
@@ -30,7 +56,7 @@ def check_annotator_cache
   min_expected = Integer(ENV.fetch('ANNOTATOR_CACHE_MIN_ENTRIES', '70000'))
   if dict_size < min_expected
     log "Annotator cache below threshold (#{dict_size} < #{min_expected}) - regenerating..."
-    annotator.create_term_cache(nil, false)
+    with_admin_user { annotator.create_term_cache(nil, false) }
     annotator.generate_dictionary_file
     log "Annotator cache regenerated: #{redis.hlen(dict_key)} entries"
   else
@@ -211,7 +237,38 @@ else
 end
 
 # ---------------------------------------------------------------------------
-# 3. ncbo_cron - main thread (foreground)
+# 3. Monkey-patch: inject admin user context into submission processing
+#    so that sub.save() succeeds when updating submission status (RDF, METRICS, etc.)
+# ---------------------------------------------------------------------------
+module NcboCron
+  module Models
+    class OntologySubmissionParser
+      alias_method :_orig_process_submission, :process_submission
+
+      def process_submission(logger, submission_id, actions = ACTIONS)
+        original_user = Thread.current[:remote_user]
+        unless original_user
+          begin
+            au = LinkedData::Models::User.where(
+              role: LinkedData::Models::Users::Role.find('ADMINISTRATOR').first
+            ).include(:username, :role).first rescue nil
+            Thread.current[:remote_user] = au if au
+          rescue StandardError => e
+            logger.warn("Could not set admin user for submission processing: #{e.message}") rescue nil
+          end
+        end
+        begin
+          _orig_process_submission(logger, submission_id, actions)
+        ensure
+          Thread.current[:remote_user] = original_user
+        end
+      end
+    end
+  end
+end
+
+# ---------------------------------------------------------------------------
+# 4. ncbo_cron - main thread (foreground)
 # ---------------------------------------------------------------------------
 bin = ENV['NCBO_CRON_PATH']
 abort("ERROR: ncbo_cron not found at: #{bin.inspect}") unless bin && File.file?(bin)

@@ -11,8 +11,23 @@ module Annotator
       alias_method :original_create_term_cache_for_submission, :create_term_cache_for_submission
       
       def create_term_cache_for_submission(logger, sub, redis=nil, redis_prefix=nil)
-        # Call original method for standard ontologies
-        original_create_term_cache_for_submission(logger, sub, redis, redis_prefix)
+        # Set admin user context so sub.save() inside the original method has write access
+        original_user = Thread.current[:remote_user]
+        unless original_user
+          begin
+            admin = LinkedData::Models::User.where(role: LinkedData::Models::Users::Role.find("ADMINISTRATOR").first).include(:username, :role).first
+            Thread.current[:remote_user] = admin if admin
+          rescue => e
+            logger.warn("Could not set admin user for annotator cache: #{e.message}")
+          end
+        end
+
+        begin
+          # Call original method for standard ontologies
+          original_create_term_cache_for_submission(logger, sub, redis, redis_prefix)
+        ensure
+          Thread.current[:remote_user] = original_user
+        end
         
         # Check if this is an OntoLex ontology
         sub.bring(:hasOntologyLanguage) if sub.bring?(:hasOntologyLanguage)
@@ -79,7 +94,7 @@ module Annotator
                               .all
             multi_logger.info("Loaded #{all_entries.length} entries in #{(Time.now - t0).round(2)}s")
 
-            form_to_concept = {}  # form_uri_string → concept_id_string
+            form_to_entry  = {}  # form_uri_string → entry_uri_string (stored in Redis as class_id)
             sense_entry_map = {}  # sense_uri_string → entry (resolved in step 2)
 
             all_entries.each do |entry|
@@ -89,7 +104,7 @@ module Annotator
                 [entry.canonicalForm,
                  *Array(entry.form),
                  *Array(entry.otherForm)].compact.each do |fid|
-                  form_to_concept[fid.to_s] ||= concept_id.to_s
+                  form_to_entry[fid.to_s] ||= entry.id.to_s
                 end
               elsif entry.sense
                 Array(entry.sense).compact.each { |sid| sense_entry_map[sid.to_s] = entry }
@@ -109,16 +124,15 @@ module Annotator
                 entry = sense_entry_map[sense.id.to_s]
                 next unless entry
 
-                concept_id = sense.isLexicalizedSenseOf
                 [entry.canonicalForm,
                  *Array(entry.form),
                  *Array(entry.otherForm)].compact.each do |fid|
-                  form_to_concept[fid.to_s] ||= concept_id.to_s
+                  form_to_entry[fid.to_s] ||= entry.id.to_s
                 end
               end
             end
 
-            multi_logger.info("form→concept map: #{form_to_concept.size} mappings from #{all_entries.length} entries")
+            multi_logger.info("form→entry map: #{form_to_entry.size} mappings from #{all_entries.length} entries")
 
             # ── Step 3: Page through Forms and index writtenRep values ───────────
             # Strips HTML tags so "<i>Leishmania</i>" indexes as "Leishmania".
@@ -137,15 +151,15 @@ module Annotator
               forms.each do |form|
                 next unless form.writtenRep
 
-                concept_id = form_to_concept[form.id.to_s]
-                next unless concept_id
+                entry_id = form_to_entry[form.id.to_s]
+                next unless entry_id
 
                 # Strip HTML tags (e.g. <i>term</i> → term)
                 written_rep = form.writtenRep.to_s.gsub(/<[^>]+>/, '').strip
                 next if written_rep.empty?
 
                 create_term_entry(
-                  redis, redis_prefix, ontResourceId, concept_id,
+                  redis, redis_prefix, ontResourceId, entry_id,
                   Annotator::Annotation::MATCH_TYPES[:type_preferred_name],
                   written_rep, []
                 )
