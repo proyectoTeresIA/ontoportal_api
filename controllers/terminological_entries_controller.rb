@@ -188,6 +188,10 @@ class TerminologicalEntriesController < ApplicationController
           source_summary = extract_source_summary_from_concept(concept_hash)
           entry_hash['sourceResource'] = source_summary if source_summary
         end
+
+        # Load cross-ontology SKOS terms for this concept
+        cross_terms = LinkedData::Mappings.ontolex_skos_cross_entries(submission, concept_id.to_s)
+        entry_hash['crossOntologyTerms'] = cross_terms unless cross_terms.empty?
       end
       
       reply entry_hash

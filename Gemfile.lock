@@ -82,7 +82,7 @@ GIT
 
 GIT
   remote: https://github.com/proyectoTeresIA/ontologies_linked_data.git
-  revision: 79b24a09c6438ad8e3712b0273d4d9c0e20334f5
+  revision: 800c891b107198dd88c95f7aa3364221a34f5540
   branch: master
   specs:
     ontologies_linked_data (0.0.1)
@@ -222,7 +222,7 @@ GEM
     i18n (1.14.8)
       concurrent-ruby (~> 1.0)
     io-console (0.8.2)
-    json (2.19.5)
+    json (2.19.7)
     json-schema (2.8.1)
       addressable (>= 2.4)
     json_pure (2.8.1)
