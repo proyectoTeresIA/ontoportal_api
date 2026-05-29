@@ -56,6 +56,57 @@ class LexicalConceptsController < ApplicationController
       reply page_object(items, total)
     end
 
+    # Returns a JSON hash { target_concept_uri => ontology_acronym } for all SKOS
+    # cross-ontology mapping properties on the given concept. This allows the frontend
+    # to generate correct navigation links without relying on the term-centric mappings API.
+    # NOTE: concept_id is passed as a query param (not a path segment) because nginx
+    # decodes percent-encoded slashes in the path before proxying, breaking path routing.
+    get '/cross_ontology_map' do
+      ont, submission = get_ontology_and_submission
+      concept_id = normalize_iri(CGI.unescape(params[:concept_id].to_s))
+      error(400, "Invalid concept id") unless concept_id.start_with?("http")
+
+      graph = submission.id.to_s
+
+      skos_preds = LinkedData::Mappings::SKOS_TERM_MAPPING_PREDICATES.values +
+                   ['http://www.w3.org/2004/02/skos/core#mappingRelation',
+                    'http://www.w3.org/2004/02/skos/core#broadMatch',
+                    'http://www.w3.org/2004/02/skos/core#narrowMatch',
+                    'http://www.w3.org/2004/02/skos/core#relatedMatch']
+      pred_list = skos_preds.uniq.map { |p| "<#{p}>" }.join(', ')
+      lc_type   = 'http://www.w3.org/ns/lemon/ontolex#LexicalConcept'
+      skos_type = 'http://www.w3.org/2004/02/skos/core#Concept'
+
+      sparql = <<-SPARQL
+SELECT DISTINCT ?target ?targetGraph
+WHERE {
+  GRAPH <#{graph}> {
+    <#{concept_id}> ?pred ?target .
+    FILTER(?pred IN (#{pred_list}))
+    FILTER(isIRI(?target))
+  }
+  {
+    GRAPH ?targetGraph { ?target a <#{lc_type}> . }
+  } UNION {
+    GRAPH ?targetGraph { ?target a <#{skos_type}> . }
+  }
+  FILTER(?targetGraph != <#{graph}>)
+}
+      SPARQL
+
+      cross_map = {}
+      Goo.sparql_query_client(:main).query(sparql).each do |sol|
+        target       = sol[:target]&.to_s
+        target_graph = sol[:targetGraph]&.to_s
+        next unless target && target_graph
+        # Graph URI format: …/ontologies/{ACRONYM}/submissions/{id}
+        acr = target_graph.split('/')[-3]
+        cross_map[target] = acr if acr
+      end
+
+      reply cross_map
+    end
+
     get '/*' do
       includes_param_check(LinkedData::Models::OntoLex::LexicalConcept)
       ont, submission = get_ontology_and_submission
