@@ -12,6 +12,43 @@ def log(msg)
   LOG_FILE.puts line
 end
 
+# SPARQL Patch: prevent Net::HTTP::Persistent from hanging indefinitely on idle connections.
+SPARQL_IDLE_TIMEOUT = Integer(ENV.fetch('SPARQL_IDLE_TIMEOUT', '30'))
+
+Net::HTTP::Persistent.prepend(Module.new do
+  def idle_timeout=(value)
+    super(value.nil? ? SPARQL_IDLE_TIMEOUT : value)
+  end
+end)
+
+log "Net::HTTP::Persistent idle_timeout protection active (nil → #{SPARQL_IDLE_TIMEOUT}s)"
+
+# SPARQL Patch: retry UPDATE queries that fail due to connection errors, with exponential backoff.
+SPARQL_UPDATE_RETRIES = Integer(ENV.fetch('SPARQL_UPDATE_RETRIES', '3'))
+SPARQL_UPDATE_RETRY_BASE_DELAY = Integer(ENV.fetch('SPARQL_UPDATE_RETRY_BASE_DELAY', '8'))
+
+SPARQL::Client.prepend(Module.new do
+  def update(query, options = {})
+    attempts = 0
+    begin
+      super
+    rescue Net::HTTP::Persistent::Error => e
+      attempts += 1
+      if attempts <= SPARQL_UPDATE_RETRIES
+        delay = SPARQL_UPDATE_RETRY_BASE_DELAY * (2**(attempts - 1)) # 8, 16, 32 s
+        warn "[ncbo_cron_boot] SPARQL UPDATE connection error (attempt #{attempts}/#{SPARQL_UPDATE_RETRIES}): " \
+             "#{e.message.lines.first.chomp}. Retrying in #{delay}s..."
+        sleep delay
+        retry
+      end
+      raise
+    end
+  end
+end)
+
+log "SPARQL::Client#update retry-on-connection-error active (max #{SPARQL_UPDATE_RETRIES} retries, base delay #{SPARQL_UPDATE_RETRY_BASE_DELAY}s)"
+
+
 # ---------------------------------------------------------------------------
 # 1. Annotator cache check (runs at startup and every ANNOTATOR_CACHE_CHECK_INTERVAL_HOURS)
 # ---------------------------------------------------------------------------

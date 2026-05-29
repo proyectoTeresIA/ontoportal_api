@@ -1,7 +1,74 @@
 require 'cgi'
+require 'zlib'
 
 class TerminologicalEntriesController < ApplicationController
   helpers OntolexSearchHelper
+
+  # Redis client for caching the full sorted entry list per submission.
+  TERM_CACHE_REDIS = Redis.new(
+    host: LinkedData::OntologiesAPI.settings.http_redis_host,
+    port: LinkedData::OntologiesAPI.settings.http_redis_port,
+    connect_timeout: 2,
+    timeout: 2
+  )
+  TERM_CACHE_TTL = 7_200
+
+  # Serialize items to a Zlib-compressed JSON string for compact Redis storage.
+  def self.cache_serialize(items)
+    Zlib::Deflate.deflate(items.to_json)
+  end
+
+  def self.cache_deserialize(raw)
+    JSON.parse(Zlib::Inflate.inflate(raw)).map { |i| i.transform_keys(&:to_sym) }
+  end
+
+  ONTOLEX_NS = 'http://www.w3.org/ns/lemon/ontolex#'
+  DCTERMS_NS = 'http://purl.org/dc/terms/'
+
+  # Run a raw SPARQL SELECT against the main endpoint.
+  def self.sparql_query(sparql)
+    Goo.sparql_query_client(:main).query(sparql)
+  end
+
+  # Fetch all entries+forms from the triple-store in a single SPARQL query and
+  # return them as an array of hashes ready for Redis caching.
+  def self.load_all_items(graph)
+    rows = sparql_query(<<~SPARQL)
+      SELECT ?entry ?form ?writtenRep ?language
+      WHERE {
+        GRAPH <#{graph}> {
+          ?entry a <#{ONTOLEX_NS}LexicalEntry> .
+          OPTIONAL {
+            ?entry <#{ONTOLEX_NS}lexicalForm> ?form .
+            ?form  <#{ONTOLEX_NS}writtenRep>  ?writtenRep .
+          }
+          OPTIONAL { ?entry <#{DCTERMS_NS}language> ?language . }
+        }
+      }
+    SPARQL
+
+    entries_map = {}
+    rows.each do |row|
+      eid = row[:entry]&.to_s
+      next unless eid
+      entries_map[eid] ||= {
+        id: eid, form_ids: [], writtenReps: [], label_lower: '',
+        language: row[:language]&.to_s.presence
+      }
+      next unless row[:form]
+      fid = row[:form].to_s
+      rep = row[:writtenRep]&.to_s
+      next if entries_map[eid][:form_ids].include?(fid)
+      entries_map[eid][:form_ids] << fid
+      entries_map[eid][:writtenReps] << rep if rep
+    end
+
+    entries_map.each_value do |item|
+      label = item[:writtenReps].first || item[:id].split('/').last
+      item[:label_lower] = label.to_s.downcase
+    end
+    entries_map.values
+  end
 
   namespace "/ontologies/:ontology/terminological_entries" do
 
@@ -10,40 +77,110 @@ class TerminologicalEntriesController < ApplicationController
       check_last_modified_segment(LinkedData::Models::OntoLex::LexicalEntry, [ont.acronym])
 
       page, size = page_params
-      search_query = (params['q'] || '').strip.downcase
-      
-      # Load entries with form references and language
-      minimal_attrs = [:form, :language]
-      all_entries = LinkedData::Models::OntoLex::LexicalEntry.in(submission).include(*minimal_attrs).all
-      
-      # Collect ALL form IDs for batch loading
-      all_form_ids = all_entries.flat_map { |e| Array(e.form) }.compact.uniq
-      
-      # Batch load ALL forms with writtenRep in a single query
-      form_reps = {}
-      if all_form_ids.any?
-        forms = LinkedData::Models::OntoLex::Form.in(submission).include(:writtenRep).all
-        forms.each { |f| form_reps[f.id.to_s] = f.writtenRep }
-      end
-      
-      # Build sort/filter data using writtenReps from forms
-      items_with_labels = all_entries.map do |entry|
-        form_ids = Array(entry.form)
-        # Get first writtenRep from forms as label
-        label = form_ids.map { |fid| form_reps[fid.to_s] }.compact.first
-        label ||= entry.id.to_s.split('/').last
-        label = label.to_s
-        language = entry.language ? entry.language.to_s : nil
-        { id: entry.id, form_ids: form_ids, label: label, label_lower: label.downcase, language: language }
-      end
-      
-      # Filter and sort by relevance (prefix matches first, then position-based)
-      items_with_labels = filter_and_sort_by_relevance(items_with_labels, search_query)
-
-      # Filter by language if provided
+      search_query   = (params['q']        || '').strip.downcase
       language_filter = (params['language'] || '').strip
+      find_id        = params['find_id']
+
+      graph = submission.id.to_s
+
+      # ── Fast path: pure browse with no filter / search / find_id ────────────
+      # Fetches only the requested page directly from the triple-store using
+      # SPARQL ORDER BY + LIMIT/OFFSET. The full entry list is never loaded into
+      # memory and Redis is not involved, so the first request for a large
+      # ontology (e.g. IATE with 87 k entries) returns in seconds rather than
+      # minutes.
+      if search_query.empty? && language_filter.empty? && find_id.nil?
+        epr = Goo.sparql_query_client(:main)
+
+        total = (epr.query(
+          "SELECT (COUNT(DISTINCT ?e) AS ?c) WHERE { GRAPH <#{graph}> { ?e a <#{ONTOLEX_NS}LexicalEntry> } }"
+        ).first&.[](:c)&.object&.to_i) || 0
+
+        offset = (page - 1) * size
+        # Fetch up to 4× as many rows as needed so that entries with multiple
+        # forms (each producing its own ORDER-BY row) still yield a full page.
+        rows = epr.query(<<~SPARQL)
+          SELECT ?entry ?form ?writtenRep ?language
+          WHERE {
+            GRAPH <#{graph}> {
+              ?entry a <#{ONTOLEX_NS}LexicalEntry> .
+              OPTIONAL {
+                ?entry <#{ONTOLEX_NS}lexicalForm> ?form .
+                ?form  <#{ONTOLEX_NS}writtenRep>  ?writtenRep .
+              }
+              OPTIONAL { ?entry <#{DCTERMS_NS}language> ?language . }
+            }
+          }
+          ORDER BY ASC(?writtenRep) ASC(?entry)
+          LIMIT #{size * 4} OFFSET #{offset}
+        SPARQL
+
+        # Collapse multiple rows for the same entry (multi-form case).
+        entries_map = {}
+        ordered_ids = []
+        rows.each do |row|
+          eid = row[:entry]&.to_s
+          next unless eid
+          if entries_map[eid].nil?
+            next if ordered_ids.size >= size   # already have enough distinct entries
+            entries_map[eid] = { form_ids: [], writtenReps: [],
+                                 language: row[:language]&.to_s.presence }
+            ordered_ids << eid
+          end
+          next unless row[:form]
+          fid = row[:form].to_s
+          rep = row[:writtenRep]&.to_s
+          next if entries_map[eid][:form_ids].include?(fid)
+          entries_map[eid][:form_ids] << fid
+          entries_map[eid][:writtenReps] << rep if rep
+        end
+
+        enriched_entries = ordered_ids.map do |eid|
+          item = entries_map[eid]
+          h = { '@id' => eid, 'id' => eid,
+                'form' => item[:form_ids], 'writtenReps' => item[:writtenReps] }
+          h['language'] = item[:language] if item[:language]
+          h
+        end
+
+        reply page_object(enriched_entries, total)
+        return
+      end
+
+      # ── Slow path: search / filter / find_id needs all entries in memory ────
+      # Backed by Redis so the first request for each submission is the only
+      # slow one.  Cache miss now uses a single raw SPARQL query rather than
+      # two goo .all batched calls, which is significantly faster for large
+      # ontologies.
+      cache_key = "term_entries_v1:#{submission.id}"
+      all_items = nil
+
+      begin
+        cached = TERM_CACHE_REDIS.get(cache_key)
+        all_items = TerminologicalEntriesController.cache_deserialize(cached) if cached
+      rescue => e
+        logger.warn "[terminological_entries] Redis read failed: #{e.message}"
+      end
+
+      unless all_items
+        all_items = TerminologicalEntriesController.load_all_items(graph)
+
+        if all_items.any?
+          begin
+            TERM_CACHE_REDIS.setex(cache_key, TERM_CACHE_TTL,
+                                   TerminologicalEntriesController.cache_serialize(all_items))
+          rescue => e
+            logger.warn "[terminological_entries] Redis write failed: #{e.message}"
+          end
+        end
+      end
+
+      # --- In-memory filter/sort/paginate (fast, operates on cached list) ---
+
+      items = filter_and_sort_by_relevance(all_items, search_query)
+
       unless language_filter.empty?
-        items_with_labels = items_with_labels.select do |item|
+        items = items.select do |item|
           lang = item[:language].to_s
           lang == language_filter ||
             lang.split('/').last == language_filter ||
@@ -51,48 +188,76 @@ class TerminologicalEntriesController < ApplicationController
         end
       end
 
-      # Pagination
-      total = items_with_labels.length
-      
-      # If find_id parameter is provided, calculate which page contains that item
-      find_id = params['find_id']
+      total = items.length
+
       if find_id && !find_id.empty?
         find_id = normalize_iri(find_id)
-        item_index = items_with_labels.find_index { |item| item[:id].to_s == find_id }
+        item_index = items.find_index { |item| item[:id].to_s == find_id }
         if item_index
           page = (item_index / size) + 1
           params['page'] = page.to_s
         end
       end
-      
+
       start_idx = (page - 1) * size
-      page_items = items_with_labels.slice(start_idx, size) || []
-      
-      # Build enriched entries preserving sort order
+      page_items = items.slice(start_idx, size) || []
+
       enriched_entries = page_items.map do |item|
-        reps = item[:form_ids].map { |fid| form_reps[fid.to_s] }.compact
         entry_hash = {
           '@id' => item[:id].to_s,
           'id' => item[:id].to_s,
-          'form' => item[:form_ids].map(&:to_s),
-          'writtenReps' => reps
+          'form' => item[:form_ids],
+          'writtenReps' => item[:writtenReps]
         }
         entry_hash['language'] = item[:language] if item[:language]
         entry_hash
       end
-      
+
       reply page_object(enriched_entries, total)
     end
 
-    # List unique language codes used across all terminological entries in this ontology
+    # List unique language codes used across all terminological entries.
+    # Cached separately from the entry list since it is called on every tab load.
     get '/languages' do
       ont, submission = get_ontology_and_submission
-      all_entries = LinkedData::Models::OntoLex::LexicalEntry.in(submission).include(:language).all
-      codes = all_entries.map { |e| e.language&.to_s }.compact.uniq.map do |uri|
-        uri.split('/').last.split('#').last
-      end.reject(&:empty?).sort
-      # Log the unique language codes for debugging
-      logger.debug "Unique language codes for ontology #{ont.acronym}: #{codes.inspect}"
+
+      cache_key = "term_entries_langs_v1:#{submission.id}"
+      codes = nil
+
+      begin
+        cached = TERM_CACHE_REDIS.get(cache_key)
+        codes = JSON.parse(Zlib::Inflate.inflate(cached)) if cached
+      rescue => e
+        logger.warn "[terminological_entries/languages] Redis read failed: #{e.message}"
+      end
+
+      unless codes
+        graph = submission.id.to_s
+        rows  = TerminologicalEntriesController.sparql_query(<<~SPARQL)
+          SELECT DISTINCT ?language
+          WHERE {
+            GRAPH <#{graph}> {
+              ?entry a <#{ONTOLEX_NS}LexicalEntry> .
+              ?entry <#{DCTERMS_NS}language> ?language .
+            }
+          }
+        SPARQL
+        codes = rows.map { |r| r[:language]&.to_s }
+                    .compact
+                    .map { |uri| uri.split('/').last.split('#').last }
+                    .reject(&:empty?)
+                    .sort
+        logger.debug "Unique language codes for ontology #{ont.acronym}: #{codes.inspect}"
+
+        if codes.any?
+          begin
+            TERM_CACHE_REDIS.setex(cache_key, TERM_CACHE_TTL, Zlib::Deflate.deflate(codes.to_json))
+          rescue => e
+            logger.warn "[terminological_entries/languages] Redis write failed: #{e.message}"
+          end
+        end
+      end
+
       reply codes
     end
 
