@@ -2,8 +2,6 @@ require 'cgi'
 require 'zlib'
 
 class TerminologicalEntriesController < ApplicationController
-  helpers OntolexSearchHelper
-
   # Redis client for caching the full sorted entry list per submission.
   TERM_CACHE_REDIS = Redis.new(
     host: LinkedData::OntologiesAPI.settings.http_redis_host,
@@ -14,6 +12,7 @@ class TerminologicalEntriesController < ApplicationController
   TERM_CACHE_TTL = 7_200
 
   # Serialize items to a Zlib-compressed JSON string for compact Redis storage.
+  # Kept for the /languages endpoint cache only.
   def self.cache_serialize(items)
     Zlib::Deflate.deflate(items.to_json)
   end
@@ -30,187 +29,170 @@ class TerminologicalEntriesController < ApplicationController
     Goo.sparql_query_client(:main).query(sparql)
   end
 
-  # Fetch all entries+forms from the triple-store in a single SPARQL query and
-  # return them as an array of hashes ready for Redis caching.
-  def self.load_all_items(graph)
-    rows = sparql_query(<<~SPARQL)
-      SELECT ?entry ?form ?writtenRep ?language
-      WHERE {
-        GRAPH <#{graph}> {
-          ?entry a <#{ONTOLEX_NS}LexicalEntry> .
-          OPTIONAL {
-            ?entry <#{ONTOLEX_NS}lexicalForm> ?form .
-            ?form  <#{ONTOLEX_NS}writtenRep>  ?writtenRep .
-          }
-          OPTIONAL { ?entry <#{DCTERMS_NS}language> ?language . }
-        }
-      }
-    SPARQL
-
-    entries_map = {}
-    rows.each do |row|
-      eid = row[:entry]&.to_s
-      next unless eid
-      entries_map[eid] ||= {
-        id: eid, form_ids: [], writtenReps: [], label_lower: '',
-        language: row[:language]&.to_s.presence
-      }
-      next unless row[:form]
-      fid = row[:form].to_s
-      rep = row[:writtenRep]&.to_s
-      next if entries_map[eid][:form_ids].include?(fid)
-      entries_map[eid][:form_ids] << fid
-      entries_map[eid][:writtenReps] << rep if rep
-    end
-
-    entries_map.each_value do |item|
-      label = item[:writtenReps].first || item[:id].split('/').last
-      item[:label_lower] = label.to_s.downcase
-    end
-    entries_map.values
-  end
-
   namespace "/ontologies/:ontology/terminological_entries" do
 
+    # List terminological entries for an ontology, with optional text search,
+    # language filter, and find_id navigation. All paths use 3 SPARQL queries
+    # so the full dataset is never loaded into memory.
+    #
+    # Pagination is based on ORDER BY ASC(?entry) (URI lexicographic order).
+    # This is intentionally different from alphabetical label order but is the
+    # only approach that is fast for very large ontologies on 4store — joining
+    # with writtenRep and ORDER BY on that literal requires a full sort of all
+    # form rows before LIMIT can be applied (5.6 M rows for IATE, ~34s).
+    #
+    # Queries:
+    #   1. COUNT(DISTINCT ?entry) with filter clauses → totalCount
+    #   2. SELECT DISTINCT ?entry ?language with filter + ORDER BY + LIMIT/OFFSET
+    #   3. SELECT forms for the page's entries via FILTER IN (fast: ≤ pagesize entries)
     get do
       ont, submission = get_ontology_and_submission
       check_last_modified_segment(LinkedData::Models::OntoLex::LexicalEntry, [ont.acronym])
 
-      page, size = page_params
-      search_query   = (params['q']        || '').strip.downcase
+      page, size      = page_params
+      search_query    = (params['q']        || '').strip.downcase
       language_filter = (params['language'] || '').strip
-      find_id        = params['find_id']
+      find_id         = params['find_id']
 
       graph = submission.id.to_s
+      epr   = Goo.sparql_query_client(:main)
 
-      # ── Fast path: pure browse with no filter / search / find_id ────────────
-      # Fetches only the requested page directly from the triple-store using
-      # SPARQL ORDER BY + LIMIT/OFFSET. The full entry list is never loaded into
-      # memory and Redis is not involved, so the first request for a large
-      # ontology (e.g. IATE with 87 k entries) returns in seconds rather than
-      # minutes.
-      if search_query.empty? && language_filter.empty? && find_id.nil?
-        epr = Goo.sparql_query_client(:main)
+      # ── Input validation ────────────────────────────────────────────────
+      # language_filter may be a full URI or a bare ISO 639-3 code.
+      # Reject values that contain characters that could be used for injection.
+      unless language_filter.empty? || language_filter =~ /\A[\w:\/.#\-%]+\z/
+        error 400, 'Invalid language parameter'
+      end
 
-        total = (epr.query(
-          "SELECT (COUNT(DISTINCT ?e) AS ?c) WHERE { GRAPH <#{graph}> { ?e a <#{ONTOLEX_NS}LexicalEntry> } }"
-        ).first&.[](:c)&.object&.to_i) || 0
+      # ── SPARQL fragment: text search ─────────────────────────────────────
+      # Join entry→form→writtenRep and apply a case-insensitive REGEX filter.
+      # REGEX metacharacters in the user query are escaped so the query is
+      # treated as a literal substring search. The double-quote character is
+      # also escaped as it delimits the SPARQL string literal.
+      text_join = ''
+      unless search_query.empty?
+        re_safe = search_query
+                    .gsub('\\', '\\\\').gsub('"',  '\\"')
+                    .gsub('.',  '\\.') .gsub('*',  '\\*')
+                    .gsub('+',  '\\+') .gsub('?',  '\\?')
+                    .gsub('^',  '\\^') .gsub('$',  '\\$')
+                    .gsub('(',  '\\(') .gsub(')',  '\\)')
+                    .gsub('[',  '\\[') .gsub(']',  '\\]')
+                    .gsub('{',  '\\{') .gsub('}',  '\\}')
+        text_join = <<~FRAG
+          ?entry <#{ONTOLEX_NS}lexicalForm> ?_srch_form .
+          ?_srch_form <#{ONTOLEX_NS}writtenRep> ?_srch_rep .
+          FILTER (REGEX(STR(?_srch_rep), "#{re_safe}", "i"))
+        FRAG
+      end
 
-        offset = (page - 1) * size
-        # Fetch up to 4× as many rows as needed so that entries with multiple
-        # forms (each producing its own ORDER-BY row) still yield a full page.
-        rows = epr.query(<<~SPARQL)
-          SELECT ?entry ?form ?writtenRep ?language
+      # ── SPARQL fragment: language filter ─────────────────────────────────
+      # Full URI → exact string match; bare code (e.g. "spa") → REGEX on the
+      # last path or fragment segment of the language URI.
+      lang_triple         = ''
+      lang_filter_clause  = ''
+      unless language_filter.empty?
+        lang_triple = "?entry <#{DCTERMS_NS}language> ?language ."
+        if language_filter.start_with?('http')
+          lang_filter_clause = "FILTER (STR(?language) = \"#{language_filter}\") ."
+        else
+          lang_filter_clause = "FILTER (REGEX(STR(?language), \"[/#]#{language_filter}$\")) ."
+        end
+      end
+
+      # ── Query 1: total count ──────────────────────────────────────────────
+      total = (epr.query(<<~SPARQL).first&.[](:c)&.object&.to_i) || 0
+        SELECT (COUNT(DISTINCT ?entry) AS ?c)
+        WHERE {
+          GRAPH <#{graph}> {
+            ?entry a <#{ONTOLEX_NS}LexicalEntry> .
+            #{text_join}
+            #{lang_triple}
+            #{lang_filter_clause}
+          }
+        }
+      SPARQL
+
+      # ── find_id: locate the page containing a specific entry ─────────────
+      # Count entries whose URI sorts lexicographically before the target to
+      # determine its position, then derive the page number.
+      if find_id && !find_id.empty?
+        norm_fid = normalize_iri(find_id)
+        position = (epr.query(<<~SPARQL).first&.[](:c)&.object&.to_i) || 0
+          SELECT (COUNT(DISTINCT ?entry) AS ?c)
           WHERE {
             GRAPH <#{graph}> {
               ?entry a <#{ONTOLEX_NS}LexicalEntry> .
-              OPTIONAL {
-                ?entry <#{ONTOLEX_NS}lexicalForm> ?form .
-                ?form  <#{ONTOLEX_NS}writtenRep>  ?writtenRep .
-              }
-              OPTIONAL { ?entry <#{DCTERMS_NS}language> ?language . }
+              #{text_join}
+              #{lang_triple}
+              #{lang_filter_clause}
+              FILTER (STR(?entry) < "#{norm_fid}")
             }
           }
-          ORDER BY ASC(?writtenRep) ASC(?entry)
-          LIMIT #{size * 4} OFFSET #{offset}
         SPARQL
+        page = (position / size) + 1
+      end
 
-        # Collapse multiple rows for the same entry (multi-form case).
-        entries_map = {}
-        ordered_ids = []
-        rows.each do |row|
-          eid = row[:entry]&.to_s
-          next unless eid
-          if entries_map[eid].nil?
-            next if ordered_ids.size >= size   # already have enough distinct entries
-            entries_map[eid] = { form_ids: [], writtenReps: [],
-                                 language: row[:language]&.to_s.presence }
-            ordered_ids << eid
-          end
-          next unless row[:form]
-          fid = row[:form].to_s
-          rep = row[:writtenRep]&.to_s
-          next if entries_map[eid][:form_ids].include?(fid)
-          entries_map[eid][:form_ids] << fid
+      # ── Query 2: page of entry URIs, ordered by entry URI ────────────────
+      # When a language filter is active the triple already binds ?language, so
+      # no OPTIONAL is needed. Otherwise use OPTIONAL to include it when present.
+      offset          = (page - 1) * size
+      lang_or_optional = lang_triple.empty? \
+        ? "OPTIONAL { ?entry <#{DCTERMS_NS}language> ?language . }" \
+        : "#{lang_triple} #{lang_filter_clause}"
+
+      entries_map = {}
+      ordered_ids = []
+      epr.query(<<~SPARQL).each do |row|
+        SELECT DISTINCT ?entry ?language
+        WHERE {
+          GRAPH <#{graph}> {
+            ?entry a <#{ONTOLEX_NS}LexicalEntry> .
+            #{text_join}
+            #{lang_or_optional}
+          }
+        }
+        ORDER BY ASC(?entry)
+        LIMIT #{size} OFFSET #{offset}
+      SPARQL
+        eid = row[:entry]&.to_s
+        next unless eid
+        unless entries_map[eid]
+          entries_map[eid] = { form_ids: [], writtenReps: [],
+                               language: row[:language]&.to_s.presence }
+          ordered_ids << eid
+        end
+      end
+
+      # ── Query 3: forms for this page's entries ────────────────────────────
+      if ordered_ids.any?
+        uri_list = ordered_ids.map { |u| "<#{u}>" }.join(', ')
+        epr.query(<<~SPARQL).each do |row|
+          SELECT ?entry ?form ?writtenRep
+          WHERE {
+            GRAPH <#{graph}> {
+              ?entry <#{ONTOLEX_NS}lexicalForm> ?form .
+              ?form  <#{ONTOLEX_NS}writtenRep>  ?writtenRep .
+              FILTER (?entry IN (#{uri_list}))
+            }
+          }
+        SPARQL
+          eid  = row[:entry]&.to_s
+          next unless eid && entries_map[eid]
+          fid_form = row[:form].to_s
+          rep      = row[:writtenRep]&.to_s
+          next if entries_map[eid][:form_ids].include?(fid_form)
+          entries_map[eid][:form_ids] << fid_form
           entries_map[eid][:writtenReps] << rep if rep
         end
-
-        enriched_entries = ordered_ids.map do |eid|
-          item = entries_map[eid]
-          h = { '@id' => eid, 'id' => eid,
-                'form' => item[:form_ids], 'writtenReps' => item[:writtenReps] }
-          h['language'] = item[:language] if item[:language]
-          h
-        end
-
-        reply page_object(enriched_entries, total)
-        return
       end
 
-      # ── Slow path: search / filter / find_id needs all entries in memory ────
-      # Backed by Redis so the first request for each submission is the only
-      # slow one.  Cache miss now uses a single raw SPARQL query rather than
-      # two goo .all batched calls, which is significantly faster for large
-      # ontologies.
-      cache_key = "term_entries_v1:#{submission.id}"
-      all_items = nil
-
-      begin
-        cached = TERM_CACHE_REDIS.get(cache_key)
-        all_items = TerminologicalEntriesController.cache_deserialize(cached) if cached
-      rescue => e
-        logger.warn "[terminological_entries] Redis read failed: #{e.message}"
-      end
-
-      unless all_items
-        all_items = TerminologicalEntriesController.load_all_items(graph)
-
-        if all_items.any?
-          begin
-            TERM_CACHE_REDIS.setex(cache_key, TERM_CACHE_TTL,
-                                   TerminologicalEntriesController.cache_serialize(all_items))
-          rescue => e
-            logger.warn "[terminological_entries] Redis write failed: #{e.message}"
-          end
-        end
-      end
-
-      # --- In-memory filter/sort/paginate (fast, operates on cached list) ---
-
-      items = filter_and_sort_by_relevance(all_items, search_query)
-
-      unless language_filter.empty?
-        items = items.select do |item|
-          lang = item[:language].to_s
-          lang == language_filter ||
-            lang.split('/').last == language_filter ||
-            lang.split('#').last == language_filter
-        end
-      end
-
-      total = items.length
-
-      if find_id && !find_id.empty?
-        find_id = normalize_iri(find_id)
-        item_index = items.find_index { |item| item[:id].to_s == find_id }
-        if item_index
-          page = (item_index / size) + 1
-          params['page'] = page.to_s
-        end
-      end
-
-      start_idx = (page - 1) * size
-      page_items = items.slice(start_idx, size) || []
-
-      enriched_entries = page_items.map do |item|
-        entry_hash = {
-          '@id' => item[:id].to_s,
-          'id' => item[:id].to_s,
-          'form' => item[:form_ids],
-          'writtenReps' => item[:writtenReps]
-        }
-        entry_hash['language'] = item[:language] if item[:language]
-        entry_hash
+      enriched_entries = ordered_ids.map do |eid|
+        item = entries_map[eid]
+        h = { '@id' => eid, 'id' => eid,
+              'form' => item[:form_ids], 'writtenReps' => item[:writtenReps] }
+        h['language'] = item[:language] if item[:language]
+        h
       end
 
       reply page_object(enriched_entries, total)
@@ -244,7 +226,8 @@ class TerminologicalEntriesController < ApplicationController
         SPARQL
         codes = rows.map { |r| r[:language]&.to_s }
                     .compact
-                    .map { |uri| uri.split('/').last.split('#').last }
+                    .map { |uri| uri.split('/').last&.split('#')&.last }
+                    .compact
                     .reject(&:empty?)
                     .sort
         logger.debug "Unique language codes for ontology #{ont.acronym}: #{codes.inspect}"
