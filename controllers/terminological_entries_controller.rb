@@ -21,6 +21,55 @@ class TerminologicalEntriesController < ApplicationController
     JSON.parse(Zlib::Inflate.inflate(raw)).map { |i| i.transform_keys(&:to_sym) }
   end
 
+  # Return a sorted array of entry URIs for a graph, ordered alphabetically by
+  # the first (lexicographically smallest) writtenRep of each entry's forms.
+  # The array is cached in Redis so the expensive GROUP BY query runs only once
+  # per submission. On cache miss the method blocks for ~6-8 s for large
+  # ontologies (e.g. IATE with 88 k entries), but subsequent calls are fast
+  # (Redis round-trip + decompression).
+  def self.sort_index(graph)
+    cache_key = "term_sort_v1:#{graph}"
+
+    begin
+      cached = TERM_CACHE_REDIS.get(cache_key)
+      return JSON.parse(Zlib::Inflate.inflate(cached)) if cached
+    rescue => e
+      # Log and rebuild below rather than serving stale/broken data.
+    end
+
+    epr = Goo.sparql_query_client(:main)
+    rows = epr.query(<<~SPARQL)
+      SELECT ?entry (MIN(STR(?writtenRep)) AS ?sortKey)
+      WHERE {
+        GRAPH <#{graph}> {
+          ?entry <#{ONTOLEX_NS}lexicalForm> ?form .
+          ?form  <#{ONTOLEX_NS}writtenRep>  ?writtenRep .
+        }
+      }
+      GROUP BY ?entry
+      LIMIT 500000
+    SPARQL
+
+    pairs = []
+    rows.each do |r|
+      uri = r[:entry]&.to_s
+      key = r[:sortKey]&.to_s.to_s
+      pairs << [uri, key] if uri
+    end
+    pairs.sort_by! { |_, k| k.gsub(/<[^>]+>/, '').gsub(/\A[^\p{L}\p{N}]+/u, '').downcase }
+    uris = pairs.map(&:first)
+
+    begin
+      TERM_CACHE_REDIS.setex(cache_key, TERM_CACHE_TTL, Zlib::Deflate.deflate(uris.to_json))
+    rescue => e
+      # Proceed without caching — just slower next time.
+    end
+
+    uris
+  rescue => e
+    nil  # Fall back to SPARQL-based ordering on any error.
+  end
+
   ONTOLEX_NS = 'http://www.w3.org/ns/lemon/ontolex#'
   DCTERMS_NS = 'http://purl.org/dc/terms/'
 
@@ -64,61 +113,118 @@ class TerminologicalEntriesController < ApplicationController
         error 400, 'Invalid language parameter'
       end
 
-      # ── SPARQL fragment: text search ─────────────────────────────────────
-      # Join entry→form→writtenRep and apply a case-insensitive REGEX filter.
-      # REGEX metacharacters in the user query are escaped so the query is
-      # treated as a literal substring search. The double-quote character is
-      # also escaped as it delimits the SPARQL string literal.
-      text_join = ''
-      unless search_query.empty?
-        re_safe = search_query
-                    .gsub('\\', '\\\\').gsub('"',  '\\"')
-                    .gsub('.',  '\\.') .gsub('*',  '\\*')
-                    .gsub('+',  '\\+') .gsub('?',  '\\?')
-                    .gsub('^',  '\\^') .gsub('$',  '\\$')
-                    .gsub('(',  '\\(') .gsub(')',  '\\)')
-                    .gsub('[',  '\\[') .gsub(']',  '\\]')
-                    .gsub('{',  '\\{') .gsub('}',  '\\}')
-        text_join = <<~FRAG
-          ?entry <#{ONTOLEX_NS}lexicalForm> ?_srch_form .
-          ?_srch_form <#{ONTOLEX_NS}writtenRep> ?_srch_rep .
-          FILTER (REGEX(STR(?_srch_rep), "#{re_safe}", "i"))
-        FRAG
+      # ── Browse path: alphabetical sort via Redis sort-index ───────────────
+      # When there is no text search and no language filter we use a pre-built
+      # sorted URI list stored in Redis.  Building it (cache miss) takes ~6-8 s
+      # for 88 k-entry ontologies but runs only once per submission.  All
+      # subsequent requests are fast: Redis read + Ruby slice + FILTER IN.
+      # If the sort index is unavailable (error / empty ontology) we fall back
+      # to the URI-ordered SPARQL path below.
+      if search_query.empty? && language_filter.empty?
+        sorted_uris = TerminologicalEntriesController.sort_index(graph)
       end
 
-      # ── SPARQL fragment: language filter ─────────────────────────────────
-      # Full URI → exact string match; bare code (e.g. "spa") → REGEX on the
-      # last path or fragment segment of the language URI.
-      lang_triple         = ''
-      lang_filter_clause  = ''
-      unless language_filter.empty?
-        lang_triple = "?entry <#{DCTERMS_NS}language> ?language ."
-        if language_filter.start_with?('http')
-          lang_filter_clause = "FILTER (STR(?language) = \"#{language_filter}\") ."
-        else
-          lang_filter_clause = "FILTER (REGEX(STR(?language), \"[/#]#{language_filter}$\")) ."
+      if sorted_uris && sorted_uris.any?
+        total = sorted_uris.length
+
+        # find_id: locate the page for a specific entry in the sorted list.
+        if find_id && !find_id.empty?
+          norm_fid = normalize_iri(find_id)
+          pos  = sorted_uris.index(norm_fid) || 0
+          page = (pos / size) + 1
         end
-      end
 
-      # ── Query 1: total count ──────────────────────────────────────────────
-      total = (epr.query(<<~SPARQL).first&.[](:c)&.object&.to_i) || 0
-        SELECT (COUNT(DISTINCT ?entry) AS ?c)
-        WHERE {
-          GRAPH <#{graph}> {
-            ?entry a <#{ONTOLEX_NS}LexicalEntry> .
-            #{text_join}
-            #{lang_triple}
-            #{lang_filter_clause}
-          }
-        }
-      SPARQL
+        offset    = (page - 1) * size
+        page_uris = sorted_uris.slice(offset, size) || []
 
-      # ── find_id: locate the page containing a specific entry ─────────────
-      # Count entries whose URI sorts lexicographically before the target to
-      # determine its position, then derive the page number.
-      if find_id && !find_id.empty?
-        norm_fid = normalize_iri(find_id)
-        position = (epr.query(<<~SPARQL).first&.[](:c)&.object&.to_i) || 0
+        entries_map = page_uris.each_with_object({}) do |uri, h|
+          h[uri] = { form_ids: [], writtenReps: [], language: nil }
+        end
+
+        if page_uris.any?
+          uri_list = page_uris.map { |u| "<#{u}>" }.join(', ')
+
+          # Fetch language for this page's entries.
+          epr.query(<<~SPARQL).each do |row|
+            SELECT ?entry ?language
+            WHERE {
+              GRAPH <#{graph}> {
+                ?entry <#{DCTERMS_NS}language> ?language .
+                FILTER (?entry IN (#{uri_list}))
+              }
+            }
+          SPARQL
+            eid = row[:entry]&.to_s
+            entries_map[eid][:language] = row[:language]&.to_s.presence if entries_map[eid]
+          end
+
+          # Fetch forms for this page's entries.
+          epr.query(<<~SPARQL).each do |row|
+            SELECT ?entry ?form ?writtenRep
+            WHERE {
+              GRAPH <#{graph}> {
+                ?entry <#{ONTOLEX_NS}lexicalForm> ?form .
+                ?form  <#{ONTOLEX_NS}writtenRep>  ?writtenRep .
+                FILTER (?entry IN (#{uri_list}))
+              }
+            }
+          SPARQL
+            eid  = row[:entry]&.to_s
+            next unless eid && entries_map[eid]
+            fid_form = row[:form].to_s
+            rep      = row[:writtenRep]&.to_s
+            next if entries_map[eid][:form_ids].include?(fid_form)
+            entries_map[eid][:form_ids] << fid_form
+            entries_map[eid][:writtenReps] << rep if rep
+          end
+        end
+
+        enriched_entries = page_uris.map do |eid|
+          item = entries_map[eid]
+          h = { '@id' => eid, 'id' => eid,
+                'form' => item[:form_ids], 'writtenReps' => item[:writtenReps] }
+          h['language'] = item[:language] if item[:language]
+          h
+        end
+
+      else
+        # ── Search / filter / fallback path ─────────────────────────────────
+        # Handles text search (q=), language filter, and browse when sort_index
+        # is unavailable.  ORDER BY on the filtered subset is fast because
+        # search results are typically small.
+
+        # ── SPARQL fragment: text search ────────────────────────────────────
+        text_join = ''
+        unless search_query.empty?
+          re_safe = search_query
+                      .gsub('\\', '\\\\').gsub('"',  '\\"')
+                      .gsub('.',  '\\.') .gsub('*',  '\\*')
+                      .gsub('+',  '\\+') .gsub('?',  '\\?')
+                      .gsub('^',  '\\^') .gsub('$',  '\\$')
+                      .gsub('(',  '\\(') .gsub(')',  '\\)')
+                      .gsub('[',  '\\[') .gsub(']',  '\\]')
+                      .gsub('{',  '\\{') .gsub('}',  '\\}')
+          text_join = <<~FRAG
+            ?entry <#{ONTOLEX_NS}lexicalForm> ?_srch_form .
+            ?_srch_form <#{ONTOLEX_NS}writtenRep> ?_srch_rep .
+            FILTER (REGEX(STR(?_srch_rep), "#{re_safe}", "i"))
+          FRAG
+        end
+
+        # ── SPARQL fragment: language filter ────────────────────────────────
+        lang_triple        = ''
+        lang_filter_clause = ''
+        unless language_filter.empty?
+          lang_triple = "?entry <#{DCTERMS_NS}language> ?language ."
+          if language_filter.start_with?('http')
+            lang_filter_clause = "FILTER (STR(?language) = \"#{language_filter}\") ."
+          else
+            lang_filter_clause = "FILTER (REGEX(STR(?language), \"[/#]#{language_filter}$\")) ."
+          end
+        end
+
+        # ── Query 1: total count ─────────────────────────────────────────────
+        total = (epr.query(<<~SPARQL).first&.[](:c)&.object&.to_i) || 0
           SELECT (COUNT(DISTINCT ?entry) AS ?c)
           WHERE {
             GRAPH <#{graph}> {
@@ -126,73 +232,88 @@ class TerminologicalEntriesController < ApplicationController
               #{text_join}
               #{lang_triple}
               #{lang_filter_clause}
-              FILTER (STR(?entry) < "#{norm_fid}")
             }
           }
         SPARQL
-        page = (position / size) + 1
-      end
 
-      # ── Query 2: page of entry URIs, ordered by entry URI ────────────────
-      # When a language filter is active the triple already binds ?language, so
-      # no OPTIONAL is needed. Otherwise use OPTIONAL to include it when present.
-      offset          = (page - 1) * size
-      lang_or_optional = lang_triple.empty? \
-        ? "OPTIONAL { ?entry <#{DCTERMS_NS}language> ?language . }" \
-        : "#{lang_triple} #{lang_filter_clause}"
-
-      entries_map = {}
-      ordered_ids = []
-      epr.query(<<~SPARQL).each do |row|
-        SELECT DISTINCT ?entry ?language
-        WHERE {
-          GRAPH <#{graph}> {
-            ?entry a <#{ONTOLEX_NS}LexicalEntry> .
-            #{text_join}
-            #{lang_or_optional}
-          }
-        }
-        ORDER BY ASC(?entry)
-        LIMIT #{size} OFFSET #{offset}
-      SPARQL
-        eid = row[:entry]&.to_s
-        next unless eid
-        unless entries_map[eid]
-          entries_map[eid] = { form_ids: [], writtenReps: [],
-                               language: row[:language]&.to_s.presence }
-          ordered_ids << eid
+        # ── find_id: locate the page containing a specific entry ─────────────
+        if find_id && !find_id.empty?
+          norm_fid = normalize_iri(find_id)
+          position = (epr.query(<<~SPARQL).first&.[](:c)&.object&.to_i) || 0
+            SELECT (COUNT(DISTINCT ?entry) AS ?c)
+            WHERE {
+              GRAPH <#{graph}> {
+                ?entry a <#{ONTOLEX_NS}LexicalEntry> .
+                #{text_join}
+                #{lang_triple}
+                #{lang_filter_clause}
+                FILTER (STR(?entry) < "#{norm_fid}")
+              }
+            }
+          SPARQL
+          page = (position / size) + 1
         end
-      end
 
-      # ── Query 3: forms for this page's entries ────────────────────────────
-      if ordered_ids.any?
-        uri_list = ordered_ids.map { |u| "<#{u}>" }.join(', ')
+        # ── Query 2: page of entry URIs, ordered by entry URI ────────────────
+        offset           = (page - 1) * size
+        lang_or_optional = lang_triple.empty? \
+          ? "OPTIONAL { ?entry <#{DCTERMS_NS}language> ?language . }" \
+          : "#{lang_triple} #{lang_filter_clause}"
+
+        entries_map = {}
+        ordered_ids = []
         epr.query(<<~SPARQL).each do |row|
-          SELECT ?entry ?form ?writtenRep
+          SELECT DISTINCT ?entry ?language
           WHERE {
             GRAPH <#{graph}> {
-              ?entry <#{ONTOLEX_NS}lexicalForm> ?form .
-              ?form  <#{ONTOLEX_NS}writtenRep>  ?writtenRep .
-              FILTER (?entry IN (#{uri_list}))
+              ?entry a <#{ONTOLEX_NS}LexicalEntry> .
+              #{text_join}
+              #{lang_or_optional}
             }
           }
+          ORDER BY ASC(?entry)
+          LIMIT #{size} OFFSET #{offset}
         SPARQL
-          eid  = row[:entry]&.to_s
-          next unless eid && entries_map[eid]
-          fid_form = row[:form].to_s
-          rep      = row[:writtenRep]&.to_s
-          next if entries_map[eid][:form_ids].include?(fid_form)
-          entries_map[eid][:form_ids] << fid_form
-          entries_map[eid][:writtenReps] << rep if rep
+          eid = row[:entry]&.to_s
+          next unless eid
+          unless entries_map[eid]
+            entries_map[eid] = { form_ids: [], writtenReps: [],
+                                 language: row[:language]&.to_s.presence }
+            ordered_ids << eid
+          end
         end
-      end
 
-      enriched_entries = ordered_ids.map do |eid|
-        item = entries_map[eid]
-        h = { '@id' => eid, 'id' => eid,
-              'form' => item[:form_ids], 'writtenReps' => item[:writtenReps] }
-        h['language'] = item[:language] if item[:language]
-        h
+        # ── Query 3: forms for this page's entries ────────────────────────────
+        if ordered_ids.any?
+          uri_list = ordered_ids.map { |u| "<#{u}>" }.join(', ')
+          epr.query(<<~SPARQL).each do |row|
+            SELECT ?entry ?form ?writtenRep
+            WHERE {
+              GRAPH <#{graph}> {
+                ?entry <#{ONTOLEX_NS}lexicalForm> ?form .
+                ?form  <#{ONTOLEX_NS}writtenRep>  ?writtenRep .
+                FILTER (?entry IN (#{uri_list}))
+              }
+            }
+          SPARQL
+            eid  = row[:entry]&.to_s
+            next unless eid && entries_map[eid]
+            fid_form = row[:form].to_s
+            rep      = row[:writtenRep]&.to_s
+            next if entries_map[eid][:form_ids].include?(fid_form)
+            entries_map[eid][:form_ids] << fid_form
+            entries_map[eid][:writtenReps] << rep if rep
+          end
+        end
+
+        enriched_entries = ordered_ids.map do |eid|
+          item = entries_map[eid]
+          h = { '@id' => eid, 'id' => eid,
+                'form' => item[:form_ids], 'writtenReps' => item[:writtenReps] }
+          h['language'] = item[:language] if item[:language]
+          h
+        end
+
       end
 
       reply page_object(enriched_entries, total)
