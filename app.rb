@@ -39,6 +39,40 @@ require_relative "config/inflections"
 
 require 'request_store'
 
+# SPARQL HTTP hardening: avoid indefinite idle persistent connections that can
+# later surface as EOF errors on reused sockets.
+SPARQL_IDLE_TIMEOUT = Integer(ENV.fetch('SPARQL_IDLE_TIMEOUT', '30'))
+if defined?(Net::HTTP::Persistent)
+  Net::HTTP::Persistent.prepend(Module.new do
+    def idle_timeout=(value)
+      super(value.nil? ? SPARQL_IDLE_TIMEOUT : value)
+    end
+  end)
+end
+
+# Retry read-only SPARQL queries when persistent HTTP sockets are reset.
+SPARQL_QUERY_RETRIES = Integer(ENV.fetch('SPARQL_QUERY_RETRIES', '2'))
+SPARQL_QUERY_RETRY_BASE_DELAY = Float(ENV.fetch('SPARQL_QUERY_RETRY_BASE_DELAY', '0.5'))
+if defined?(SPARQL::Client)
+  SPARQL::Client.prepend(Module.new do
+    def query(*args, **kwargs, &block)
+      attempts = 0
+      begin
+        super(*args, **kwargs, &block)
+      rescue Net::HTTP::Persistent::Error => e
+        attempts += 1
+        if attempts <= SPARQL_QUERY_RETRIES
+          delay = SPARQL_QUERY_RETRY_BASE_DELAY * (2**(attempts - 1))
+          warn "[api] SPARQL query connection error (attempt #{attempts}/#{SPARQL_QUERY_RETRIES}): #{e.message.lines.first.chomp}. Retrying in #{delay}s..."
+          sleep delay
+          retry
+        end
+        raise
+      end
+    end
+  end)
+end
+
 # Protection settings
 set :protection, :except => :path_traversal
 
