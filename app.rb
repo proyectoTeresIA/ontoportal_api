@@ -163,7 +163,14 @@ end
 
 # Show exceptions after timeout
 if LinkedData::OntologiesAPI.settings.enable_req_timeout
-  use Rack::Timeout; Rack::Timeout.timeout = LinkedData::OntologiesAPI.settings.req_timeout # seconds, shorter than unicorn timeout
+  use Rack::Timeout
+  req_timeout = LinkedData::OntologiesAPI.settings.req_timeout
+  # rack-timeout API differs by version: support both legacy and current setters.
+  if Rack::Timeout.respond_to?(:service_timeout=)
+    Rack::Timeout.service_timeout = req_timeout
+  else
+    Rack::Timeout.timeout = req_timeout
+  end
 end
 use Rack::SliceDetection
 use Rack::Accept
