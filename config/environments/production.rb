@@ -97,6 +97,8 @@ LinkedData::OntologiesAPI.config do |config|
   config.enable_throttling           = false
   config.restrict_download           = []
   #config.ontology_rank               = ""
+  config.enable_req_timeout = ENV.fetch('ENABLE_REQ_TIMEOUT', 'false') == 'true'
+  config.req_timeout        = Integer(ENV.fetch('REQ_TIMEOUT', '45'))
 end
 
 NcboCron.config do |config|
